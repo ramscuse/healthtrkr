@@ -18,7 +18,7 @@ function decodeJwtPayload(token) {
 }
 
 export function getToken() {
-  const token = localStorage.getItem('token') ?? sessionStorage.getItem('token')
+  const token = localStorage.getItem('token')
   if (!token) return null
 
   const rememberMe = localStorage.getItem('rememberMe')
@@ -39,10 +39,9 @@ export function getToken() {
 }
 
 export function setToken(token, rememberMe) {
-  const storage = rememberMe ? localStorage : sessionStorage
-  storage.setItem('token', token)
-  ;(rememberMe ? sessionStorage : localStorage).removeItem('token')
+  localStorage.setItem('token', token)
   localStorage.setItem('rememberMe', rememberMe ? 'true' : 'false')
+  sessionStorage.removeItem('token')
 }
 
 export function clearToken() {

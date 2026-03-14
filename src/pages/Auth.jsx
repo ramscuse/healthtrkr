@@ -272,9 +272,12 @@ export default function Auth() {
 
             {view === 'register' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Name</label>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Name</label>
                 <input
+                  id="name"
+                  name="name"
                   type="text"
+                  autoComplete="name"
                   value={name}
                   onChange={e => setName(e.target.value)}
                   required
@@ -286,9 +289,12 @@ export default function Auth() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Email</label>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Email</label>
               <input
+                id="email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
@@ -300,7 +306,7 @@ export default function Auth() {
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Password</label>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-200">Password</label>
                 {view === 'login' && (
                   <button
                     type="button"
@@ -312,7 +318,10 @@ export default function Auth() {
                 )}
               </div>
               <input
+                id="password"
+                name="password"
                 type="password"
+                autoComplete={view === 'login' ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
