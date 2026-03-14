@@ -1,0 +1,43 @@
+{
+  "name": "healthtrkr",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev:server": "nodemon server/index.js",
+    "dev:client": "vite src --host --config vite.config.js",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "vite build src --config vite.config.js",
+    "start": "NODE_ENV=production node server/index.js",
+    "db:migrate": "npx prisma migrate dev",
+    "db:seed": "node db/seed.js",
+    "db:studio": "npx prisma studio",
+    "db:reset-password": "node db/reset-password.js",
+    "db:seed-foods": "node db/seed-foods.js",
+    "db:seed-off-foods": "node db/seed-off-foods.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2",
+    "prisma": "^5.22.0"
+  },
+  "prisma": {
+    "schema": "db/schema.prisma"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "nodemon": "^3.1.7",
+    "postcss": "^8.4.47",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "recharts": "^2.13.3",
+    "tailwindcss": "^3.4.14",
+    "vite": "^5.4.10"
+  }
+}

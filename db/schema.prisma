@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String           @id @default(cuid())
+  email       String           @unique
+  password    String
+  name        String
+  darkMode    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  goals               Goals?
+  meals               MealEntry[]
+  workouts            WorkoutSession[]
+  healthData          HealthData[]
+  customFoods         CustomFood[]
+  mealPresets         MealPreset[]
+  customExercises     CustomExercise[]
+  workoutPresets      WorkoutPreset[]
+  waterEntries        WaterEntry[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Goals {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  calorieMin  Int      @default(2400)
+  calorieMax  Int      @default(2600)
+  proteinMin  Int      @default(176)
+  proteinMax  Int      @default(200)
+  carbsGoal   Int?
+  fatGoal     Int?
+  waterGoal   Float?
+  startWeight Float?
+  startDate   DateTime @default(now())
+}
+
+model MealEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  date        DateTime
+  mealType    String
+  foodName    String
+  calories    Float
+  protein     Float
+  carbs       Float
+  fat         Float
+  servingSize Float    @default(100)
+  servingUnit String   @default("g")
+  createdAt   DateTime @default(now())
+}
+
+model WorkoutSession {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  date        DateTime
+  splitDay    String
+  exercises   Json
+  durationMin Int?
+  source      String   @default("manual")
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+model HealthData {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  date            DateTime
+  activeCalories  Float?
+  restingCalories Float?
+  steps           Int?
+  heartRateAvg    Int?
+  source          String   @default("health_auto_export")
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+model CustomFood {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  calories  Float
+  protein   Float
+  carbs     Float
+  fat       Float
+  createdAt DateTime @default(now())
+
+  @@unique([userId, name])
+}
+
+model MealPreset {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  items     MealPresetItem[]
+  createdAt DateTime         @default(now())
+
+  @@unique([userId, name])
+}
+
+model CustomExercise {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  category  String
+  muscles   Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, name])
+}
+
+model WorkoutPreset {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  exercises Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, name])
+}
+
+model MealPresetItem {
+  id        String     @id @default(cuid())
+  presetId  String
+  preset    MealPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  foodName  String
+  calories  Float
+  protein   Float
+  carbs     Float
+  fat       Float
+  servings  Float      @default(1)
+}
+
+model WaterEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  amount    Float
+  createdAt DateTime @default(now())
+}

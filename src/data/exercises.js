@@ -1,0 +1,75 @@
+export const CATEGORIES = [
+  'Upper Body Push',
+  'Upper Body Pull',
+  'Lower Body',
+  'Core',
+  'Cardio',
+]
+
+export const EXERCISES = [
+  // -- Upper Body Push --
+  { id: 'bench_press',        name: 'Barbell Bench Press',     category: 'Upper Body Push', muscles: ['Chest', 'Triceps', 'Front Delts'] },
+  { id: 'incline_press',      name: 'Incline Bench Press',     category: 'Upper Body Push', muscles: ['Upper Chest', 'Triceps', 'Front Delts'] },
+  { id: 'ohp',                name: 'Overhead Press',          category: 'Upper Body Push', muscles: ['Shoulders', 'Triceps', 'Upper Chest'] },
+  { id: 'db_shoulder_press',  name: 'Dumbbell Shoulder Press', category: 'Upper Body Push', muscles: ['Shoulders', 'Triceps'] },
+  { id: 'dips',               name: 'Dips',                    category: 'Upper Body Push', muscles: ['Chest', 'Triceps', 'Front Delts'] },
+  { id: 'push_ups',           name: 'Push-Ups',                category: 'Upper Body Push', muscles: ['Chest', 'Triceps', 'Shoulders'] },
+  { id: 'lateral_raises',     name: 'Lateral Raises',          category: 'Upper Body Push', muscles: ['Side Delts'] },
+  { id: 'tricep_pushdown',    name: 'Tricep Pushdowns',        category: 'Upper Body Push', muscles: ['Triceps'] },
+  { id: 'skull_crushers',     name: 'Skull Crushers',          category: 'Upper Body Push', muscles: ['Triceps'] },
+  { id: 'db_flyes',           name: 'Dumbbell Flyes',          category: 'Upper Body Push', muscles: ['Chest'] },
+  { id: 'arnold_press',       name: 'Arnold Press',            category: 'Upper Body Push', muscles: ['Shoulders', 'Triceps'] },
+  { id: 'cable_crossover',    name: 'Cable Crossover',         category: 'Upper Body Push', muscles: ['Chest'] },
+
+  // -- Upper Body Pull --
+  { id: 'barbell_row',        name: 'Barbell Row',             category: 'Upper Body Pull', muscles: ['Lats', 'Rhomboids', 'Biceps'] },
+  { id: 'lat_pulldown',       name: 'Lat Pulldown',            category: 'Upper Body Pull', muscles: ['Lats', 'Biceps', 'Upper Back'] },
+  { id: 'pull_ups',           name: 'Pull-Ups',                category: 'Upper Body Pull', muscles: ['Lats', 'Biceps'] },
+  { id: 'cable_row',          name: 'Seated Cable Row',        category: 'Upper Body Pull', muscles: ['Mid Back', 'Rhomboids', 'Biceps'] },
+  { id: 'face_pulls',         name: 'Face Pulls',              category: 'Upper Body Pull', muscles: ['Rear Delts', 'Rhomboids'] },
+  { id: 'barbell_curl',       name: 'Barbell Curl',            category: 'Upper Body Pull', muscles: ['Biceps'] },
+  { id: 'hammer_curls',       name: 'Hammer Curls',            category: 'Upper Body Pull', muscles: ['Biceps', 'Brachialis'] },
+  { id: 'preacher_curl',      name: 'Preacher Curl',           category: 'Upper Body Pull', muscles: ['Biceps'] },
+  { id: 'db_row',             name: 'Single-Arm Dumbbell Row', category: 'Upper Body Pull', muscles: ['Lats', 'Rhomboids'] },
+  { id: 'tbar_row',           name: 'T-Bar Row',               category: 'Upper Body Pull', muscles: ['Mid Back', 'Lats'] },
+  { id: 'shrugs',             name: 'Shrugs',                  category: 'Upper Body Pull', muscles: ['Traps'] },
+  { id: 'chin_ups',           name: 'Chin-Ups',                category: 'Upper Body Pull', muscles: ['Lats', 'Biceps', 'Upper Back'] },
+
+  // -- Lower Body --
+  { id: 'squat',              name: 'Barbell Squat',           category: 'Lower Body', muscles: ['Quads', 'Glutes', 'Hamstrings'] },
+  { id: 'rdl',                name: 'Romanian Deadlift',       category: 'Lower Body', muscles: ['Hamstrings', 'Glutes'] },
+  { id: 'deadlift',           name: 'Conventional Deadlift',   category: 'Lower Body', muscles: ['Hamstrings', 'Glutes', 'Lower Back'] },
+  { id: 'leg_press',          name: 'Leg Press',               category: 'Lower Body', muscles: ['Quads', 'Glutes', 'Hamstrings'] },
+  { id: 'leg_curl',           name: 'Leg Curl',                category: 'Lower Body', muscles: ['Hamstrings'] },
+  { id: 'leg_extension',      name: 'Leg Extension',           category: 'Lower Body', muscles: ['Quads'] },
+  { id: 'split_squat',        name: 'Bulgarian Split Squat',   category: 'Lower Body', muscles: ['Quads', 'Glutes'] },
+  { id: 'hip_thrust',         name: 'Hip Thrust',              category: 'Lower Body', muscles: ['Glutes', 'Hamstrings'] },
+  { id: 'calf_raise',         name: 'Calf Raises',             category: 'Lower Body', muscles: ['Calves'] },
+  { id: 'lunges',             name: 'Walking Lunges',          category: 'Lower Body', muscles: ['Quads', 'Glutes', 'Hamstrings'] },
+  { id: 'hack_squat',         name: 'Hack Squat',              category: 'Lower Body', muscles: ['Quads', 'Glutes'] },
+  { id: 'sumo_deadlift',      name: 'Sumo Deadlift',           category: 'Lower Body', muscles: ['Glutes', 'Inner Thighs', 'Hamstrings'] },
+
+  // -- Core --
+  { id: 'plank',              name: 'Plank',                   category: 'Core', muscles: ['Abs', 'Transverse Abdominis', 'Shoulders'] },
+  { id: 'cable_crunch',       name: 'Cable Crunch',            category: 'Core', muscles: ['Abs'] },
+  { id: 'hanging_leg_raise',  name: 'Hanging Leg Raise',       category: 'Core', muscles: ['Lower Abs', 'Hip Flexors'] },
+  { id: 'ab_wheel',           name: 'Ab Wheel Rollout',        category: 'Core', muscles: ['Abs', 'Transverse Abdominis'] },
+  { id: 'russian_twist',      name: 'Russian Twist',           category: 'Core', muscles: ['Obliques', 'Abs'] },
+  { id: 'dead_bug',           name: 'Dead Bug',                category: 'Core', muscles: ['Abs', 'Transverse Abdominis'] },
+  { id: 'bicycle_crunch',     name: 'Bicycle Crunch',          category: 'Core', muscles: ['Obliques', 'Abs'] },
+  { id: 'hollow_hold',        name: 'Hollow Hold',             category: 'Core', muscles: ['Abs', 'Hip Flexors'] },
+  { id: 'pallof_press',       name: 'Pallof Press',            category: 'Core', muscles: ['Obliques', 'Transverse Abdominis'] },
+  { id: 'sit_ups',            name: 'Sit-Ups',                 category: 'Core', muscles: ['Abs', 'Hip Flexors'] },
+
+  // -- Cardio --
+  { id: 'treadmill',          name: 'Treadmill Run',           category: 'Cardio', muscles: ['Cardiovascular', 'Legs'] },
+  { id: 'cycling',            name: 'Cycling',                 category: 'Cardio', muscles: ['Cardiovascular', 'Legs'] },
+  { id: 'rowing',             name: 'Rowing Machine',          category: 'Cardio', muscles: ['Cardiovascular', 'Back', 'Arms'] },
+  { id: 'elliptical',         name: 'Elliptical',              category: 'Cardio', muscles: ['Cardiovascular', 'Full Body'] },
+  { id: 'jump_rope',          name: 'Jump Rope',               category: 'Cardio', muscles: ['Cardiovascular', 'Calves'] },
+  { id: 'stair_climber',      name: 'Stair Climber',           category: 'Cardio', muscles: ['Cardiovascular', 'Glutes', 'Legs'] },
+  { id: 'swimming',           name: 'Swimming',                category: 'Cardio', muscles: ['Cardiovascular', 'Full Body'] },
+  { id: 'hiit',               name: 'HIIT Intervals',          category: 'Cardio', muscles: ['Cardiovascular', 'Full Body'] },
+  { id: 'battle_ropes',       name: 'Battle Ropes',            category: 'Cardio', muscles: ['Cardiovascular', 'Shoulders', 'Arms'] },
+  { id: 'sprints',            name: 'Sprint Intervals',        category: 'Cardio', muscles: ['Cardiovascular', 'Legs'] },
+]
