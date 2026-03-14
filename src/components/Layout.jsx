@@ -53,7 +53,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate()
 
   function handleLogout() {
-    localStorage.clear()
+    localStorage.removeItem('token')
     navigate('/login')
   }
 
@@ -108,14 +108,14 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
+      <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-900 pt-[env(safe-area-inset-top)]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-8">
           {children}
         </div>
       </main>
 
       {/* Bottom tab bar — mobile only */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex pb-[env(safe-area-inset-bottom)]">
         {navItems.map(({ to, mobileLabel, Icon }) => (
           <NavLink
             key={to}
