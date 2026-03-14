@@ -4,6 +4,7 @@
 # Set DATA in your .env to the root of your RAID mount, e.g.:
 #   DATA=/mnt/e/docker/healthtrkr
 # Postgres data will live at ${DATA}/postgres
+# Food seed cache (foods.json) will live at ${DATA}/data
 
 services:
   db:
@@ -46,6 +47,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    volumes:
+      - ${DATA}/data:/app/data
     depends_on:
       db:
         condition: service_healthy
