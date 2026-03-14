@@ -25,7 +25,7 @@ services:
       retries: 10
 
   app:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/healthtrkr:latest
+    image: ghcr.io/ramscuse/healthtrkr:latest
     container_name: healthtrkr-app
     restart: unless-stopped
     ports:
