@@ -182,7 +182,8 @@ export default function Dashboard() {
                   onChange={e => { setActiveCalInput(e.target.value); setActiveCalError('') }}
                   onKeyDown={e => e.key === 'Enter' && handleSaveActiveCal()}
                   placeholder="kcal"
-                  autoFocus
+                  inputMode="numeric"
+                  style={{ fontSize: '16px' }}
                   className="w-24 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
                 <span className="text-xs text-gray-500 dark:text-gray-400">kcal</span>

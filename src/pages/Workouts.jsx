@@ -294,6 +294,7 @@ export default function Workouts() {
           value={selectedDate}
           max={today}
           onChange={e => setSelectedDate(e.target.value)}
+          style={{ fontSize: '16px' }}
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
         />
       </div>
@@ -367,6 +368,7 @@ export default function Workouts() {
                   value={saveAsPresetName}
                   onChange={e => setSaveAsPresetName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSaveAsPreset()}
+                  style={{ fontSize: '16px' }}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
                 />
                 {saveAsPresetErr && <p className="text-xs text-red-600 dark:text-red-400">{saveAsPresetErr}</p>}
@@ -709,6 +711,7 @@ export default function Workouts() {
                   {/* Name */}
                   <input type="text" placeholder="Preset name..." value={presetName}
                     onChange={e => setPresetName(e.target.value)}
+                    style={{ fontSize: '16px' }}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500" />
 
                   {/* Selected exercises */}
@@ -801,11 +804,13 @@ export default function Workouts() {
                     <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Exercise Name</label>
                     <input type="text" placeholder="e.g. Bulgarian Split Squat" value={exForm.name}
                       onChange={e => setExForm(f => ({ ...f, name: e.target.value }))}
+                      style={{ fontSize: '16px' }}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Category</label>
                     <select value={exForm.category} onChange={e => setExForm(f => ({ ...f, category: e.target.value }))}
+                      style={{ fontSize: '16px' }}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500">
                       {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
@@ -814,6 +819,7 @@ export default function Workouts() {
                     <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Muscles Targeted</label>
                     <input type="text" placeholder="e.g. Quads, Glutes, Hamstrings" value={exForm.muscles}
                       onChange={e => setExForm(f => ({ ...f, muscles: e.target.value }))}
+                      style={{ fontSize: '16px' }}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500" />
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Separate multiple muscles with commas</p>
                   </div>

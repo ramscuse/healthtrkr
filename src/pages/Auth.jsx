@@ -105,6 +105,7 @@ export default function Auth() {
                   onChange={e => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
+                  style={{ fontSize: '16px' }}
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
               </div>
@@ -162,6 +163,7 @@ export default function Auth() {
                   onChange={e => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
+                  style={{ fontSize: '16px' }}
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
               </div>
@@ -174,6 +176,7 @@ export default function Auth() {
                   required
                   placeholder="123456"
                   inputMode="numeric"
+                  style={{ fontSize: '16px' }}
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent tracking-widest text-center font-mono"
                 />
               </div>
@@ -185,6 +188,7 @@ export default function Auth() {
                   onChange={e => setNewPassword(e.target.value)}
                   required
                   placeholder="Min 6 characters"
+                  style={{ fontSize: '16px' }}
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
               </div>
@@ -275,6 +279,7 @@ export default function Auth() {
                   onChange={e => setName(e.target.value)}
                   required
                   placeholder="Your name"
+                  style={{ fontSize: '16px' }}
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
               </div>
@@ -288,6 +293,7 @@ export default function Auth() {
                 onChange={e => setEmail(e.target.value)}
                 required
                 placeholder="you@example.com"
+                style={{ fontSize: '16px' }}
                 className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>
@@ -311,6 +317,7 @@ export default function Auth() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="Min 6 characters"
+                style={{ fontSize: '16px' }}
                 className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>

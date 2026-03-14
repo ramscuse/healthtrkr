@@ -509,7 +509,7 @@ export default function Meals() {
             value={searchQuery}
             onChange={handleSearchInput}
             placeholder="e.g. chicken breast, banana"
-            autoFocus
+            style={{ fontSize: '16px' }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
           />
         </div>
@@ -618,7 +618,7 @@ export default function Meals() {
             value={form.foodName}
             onChange={handleFormChange}
             required
-            autoFocus
+            style={{ fontSize: '16px' }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
           />
         </div>
@@ -636,6 +636,8 @@ export default function Meals() {
               required
               min="0"
               step="1"
+              inputMode="numeric"
+              style={{ fontSize: '16px' }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
             />
           </div>
@@ -651,6 +653,8 @@ export default function Meals() {
               required
               min="0"
               step="0.1"
+              inputMode="decimal"
+              style={{ fontSize: '16px' }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
             />
           </div>
@@ -666,6 +670,8 @@ export default function Meals() {
               required
               min="0"
               step="0.1"
+              inputMode="decimal"
+              style={{ fontSize: '16px' }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
             />
           </div>
@@ -681,6 +687,8 @@ export default function Meals() {
               required
               min="0"
               step="0.1"
+              inputMode="decimal"
+              style={{ fontSize: '16px' }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
             />
           </div>
@@ -695,6 +703,8 @@ export default function Meals() {
             onChange={handleFormChange}
             min="0.25"
             step="0.25"
+            inputMode="decimal"
+            style={{ fontSize: '16px' }}
             className="w-32 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
           />
           {baseNutrients && (
@@ -850,7 +860,7 @@ export default function Meals() {
             value={newPreset.name}
             onChange={e => setNewPreset(prev => ({ ...prev, name: e.target.value }))}
             placeholder="e.g. Morning Stack"
-            autoFocus
+            style={{ fontSize: '16px' }}
             className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
         </div>
@@ -863,6 +873,7 @@ export default function Meals() {
             value={presetSearchQuery}
             onChange={handlePresetSearchInput}
             placeholder="Search to add foods..."
+            style={{ fontSize: '16px' }}
             className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
         </div>
@@ -950,6 +961,8 @@ export default function Meals() {
                     onChange={e => updatePresetItemServings(index, e.target.value)}
                     min="0.25"
                     step="0.25"
+                    inputMode="decimal"
+                    style={{ fontSize: '16px' }}
                     className="w-16 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-700 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     aria-label={`Servings for ${item.foodName}`}
                   />
@@ -993,6 +1006,7 @@ export default function Meals() {
           type="date"
           value={date}
           onChange={e => setDate(e.target.value)}
+          style={{ fontSize: '16px' }}
           className="border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
         />
       </div>
@@ -1041,6 +1055,8 @@ export default function Meals() {
                   <div className="flex items-center gap-1">
                     <input type="number" min="0" value={goalsForm[key]}
                       onChange={e => setGoalsForm(f => ({ ...f, [key]: e.target.value }))}
+                      inputMode="numeric"
+                      style={{ fontSize: '16px' }}
                       className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{unit}</span>
                   </div>
@@ -1159,7 +1175,7 @@ export default function Meals() {
                         onChange={e => setSaveAsMeal(prev => ({ ...prev, name: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') handleSaveMealAsPreset(items); if (e.key === 'Escape') setSaveAsMeal(null) }}
                         placeholder="Preset name…"
-                        autoFocus
+                        style={{ fontSize: '16px' }}
                         className="flex-1 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       />
                       <button
