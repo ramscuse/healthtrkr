@@ -1,22 +1,54 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? ''
+const parsedPwaSessionHours = Number(import.meta.env.VITE_PWA_SESSION_HOURS ?? 24)
+const PWA_SESSION_HOURS =
+  Number.isFinite(parsedPwaSessionHours) && parsedPwaSessionHours > 0
+    ? parsedPwaSessionHours
+    : 24
+
+function decodeJwtPayload(token) {
+  try {
+    const segment = token.split('.')[1]
+    if (!segment) return null
+    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+    return JSON.parse(atob(padded))
+  } catch {
+    return null
+  }
+}
 
 export function getToken() {
-  return localStorage.getItem('token') || sessionStorage.getItem('token')
+  const token = localStorage.getItem('token') ?? sessionStorage.getItem('token')
+  if (!token) return null
+
+  const rememberMe = localStorage.getItem('rememberMe')
+  if (rememberMe !== 'true') {
+    const payload = decodeJwtPayload(token)
+    if (!payload || !payload.iat) {
+      clearToken()
+      return null
+    }
+    const ageHours = (Date.now() / 1000 - payload.iat) / 3600
+    if (ageHours > PWA_SESSION_HOURS) {
+      clearToken()
+      return null
+    }
+  }
+
+  return token
 }
 
 export function setToken(token, rememberMe) {
-  if (rememberMe) {
-    sessionStorage.removeItem('token')
-    localStorage.setItem('token', token)
-  } else {
-    localStorage.removeItem('token')
-    sessionStorage.setItem('token', token)
-  }
+  const storage = rememberMe ? localStorage : sessionStorage
+  storage.setItem('token', token)
+  ;(rememberMe ? sessionStorage : localStorage).removeItem('token')
+  localStorage.setItem('rememberMe', rememberMe ? 'true' : 'false')
 }
 
 export function clearToken() {
   localStorage.removeItem('token')
   sessionStorage.removeItem('token')
+  localStorage.removeItem('rememberMe')
 }
 
 async function request(path, options = {}) {
