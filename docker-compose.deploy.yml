@@ -1,0 +1,57 @@
+# Server-only deploy file — no source code needed.
+# Copy this file and a .env to your server, then: docker compose -f docker-compose.deploy.yml up -d
+#
+# Set DATA in your .env to the root of your RAID mount, e.g.:
+#   DATA=/mnt/e/docker/healthtrkr
+# Postgres data will live at ${DATA}/postgres
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: healthtrkr-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: healthtrkr
+    volumes:
+      - ${DATA}/postgres:/var/lib/postgresql/data
+    networks:
+      - healthtrkr
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d healthtrkr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: ghcr.io/YOUR_GITHUB_USERNAME/healthtrkr:latest
+    container_name: healthtrkr-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/healthtrkr
+      JWT_SECRET: ${JWT_SECRET}
+      HEALTH_SYNC_TOKEN: ${HEALTH_SYNC_TOKEN}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      EMAILJS_SERVICE_ID: ${EMAILJS_SERVICE_ID:-}
+      EMAILJS_TEMPLATE_ID: ${EMAILJS_TEMPLATE_ID:-}
+      EMAILJS_PUBLIC_KEY: ${EMAILJS_PUBLIC_KEY:-}
+      EMAILJS_PRIVATE_KEY: ${EMAILJS_PRIVATE_KEY:-}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/api/workouts/template"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - healthtrkr
+
+networks:
+  healthtrkr:
+    driver: bridge

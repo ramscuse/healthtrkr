@@ -219,6 +219,29 @@ router.get('/presets', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+function validateItems(items) {
+  for (const [i, item] of items.entries()) {
+    if (!item.foodName || typeof item.foodName !== 'string' || !item.foodName.trim())
+      return `items[${i}].foodName is required`;
+    for (const field of ['calories', 'protein', 'carbs', 'fat']) {
+      if (typeof item[field] !== 'number' || !isFinite(item[field]))
+        return `items[${i}].${field} must be a finite number`;
+    }
+  }
+  return null;
+}
+
+function mapItems(items) {
+  return items.map(i => ({
+    foodName: i.foodName.trim(),
+    calories: i.calories,
+    protein:  i.protein,
+    carbs:    i.carbs,
+    fat:      i.fat,
+    servings: (typeof i.servings === 'number' && isFinite(i.servings) && i.servings > 0) ? i.servings : 1,
+  }));
+}
+
 // POST /api/meals/presets
 router.post('/presets', async (req, res, next) => {
   try {
@@ -226,21 +249,10 @@ router.post('/presets', async (req, res, next) => {
     const { name, items } = req.body;
     if (!name || !Array.isArray(items) || items.length === 0)
       return res.status(400).json({ error: 'name and at least one item are required' });
+    const itemError = validateItems(items);
+    if (itemError) return res.status(400).json({ error: itemError });
     const preset = await prisma.mealPreset.create({
-      data: {
-        userId,
-        name: name.trim(),
-        items: {
-          create: items.map(i => ({
-            foodName: i.foodName,
-            calories: Number(i.calories) || 0,
-            protein:  Number(i.protein)  || 0,
-            carbs:    Number(i.carbs)    || 0,
-            fat:      Number(i.fat)      || 0,
-            servings: Number(i.servings) || 1,
-          })),
-        },
-      },
+      data: { userId, name: name.trim(), items: { create: mapItems(items) } },
       include: { items: true },
     });
     res.status(201).json(preset);
@@ -257,29 +269,21 @@ router.put('/presets/:id', async (req, res, next) => {
     const { name, items } = req.body;
     if (!name || !Array.isArray(items) || items.length === 0)
       return res.status(400).json({ error: 'name and at least one item are required' });
+    const itemError = validateItems(items);
+    if (itemError) return res.status(400).json({ error: itemError });
 
     const preset = await prisma.mealPreset.findUnique({ where: { id: req.params.id } });
     if (!preset) return res.status(404).json({ error: 'Preset not found' });
     if (preset.userId !== userId) return res.status(403).json({ error: 'Not authorized' });
 
-    // Replace all items atomically
-    await prisma.mealPresetItem.deleteMany({ where: { presetId: req.params.id } });
-    const updated = await prisma.mealPreset.update({
-      where: { id: req.params.id },
-      data: {
-        name: name.trim(),
-        items: {
-          create: items.map(i => ({
-            foodName: i.foodName,
-            calories: Number(i.calories) || 0,
-            protein:  Number(i.protein)  || 0,
-            carbs:    Number(i.carbs)    || 0,
-            fat:      Number(i.fat)      || 0,
-            servings: Number(i.servings) || 1,
-          })),
-        },
-      },
-      include: { items: true },
+    // Replace all items atomically — deleteMany + update in a single transaction
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.mealPresetItem.deleteMany({ where: { presetId: req.params.id } });
+      return tx.mealPreset.update({
+        where: { id: req.params.id },
+        data: { name: name.trim(), items: { create: mapItems(items) } },
+        include: { items: true },
+      });
     });
     res.json(updated);
   } catch (err) {

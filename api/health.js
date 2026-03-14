@@ -43,22 +43,34 @@ router.post('/sync', async (req, res, next) => {
     for (const metric of data.metrics) {
       const entries = metric.data || [];
       for (const entry of entries) {
+        if (typeof entry.date !== 'string') continue;
         const dateStr = entry.date.split(' ')[0]; // "2026-03-10"
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+
         if (!byDate[dateStr]) byDate[dateStr] = {};
+
+        const qty = entry.qty;
+        const avg = entry.avg;
 
         switch (metric.name) {
           case 'active_energy':
-            byDate[dateStr].activeCalories = entry.qty;
+            if (typeof qty === 'number' && isFinite(qty) && qty >= 0)
+              byDate[dateStr].activeCalories = qty;
             break;
           case 'basal_energy_burned':
-            byDate[dateStr].restingCalories = entry.qty;
+            if (typeof qty === 'number' && isFinite(qty) && qty >= 0)
+              byDate[dateStr].restingCalories = qty;
             break;
           case 'step_count':
-            byDate[dateStr].steps = Math.round(entry.qty);
+            if (typeof qty === 'number' && isFinite(qty) && qty >= 0)
+              byDate[dateStr].steps = Math.round(qty);
             break;
-          case 'heart_rate':
-            byDate[dateStr].heartRateAvg = Math.round(entry.avg ?? entry.qty ?? 0);
+          case 'heart_rate': {
+            const val = avg ?? qty;
+            if (typeof val === 'number' && isFinite(val) && val >= 0)
+              byDate[dateStr].heartRateAvg = Math.round(val);
             break;
+          }
         }
       }
     }
@@ -73,7 +85,7 @@ router.post('/sync', async (req, res, next) => {
       });
     });
 
-    await Promise.all(upserts);
+    await prisma.$transaction(upserts);
     res.json({ synced: upserts.length });
   } catch (err) {
     next(err);

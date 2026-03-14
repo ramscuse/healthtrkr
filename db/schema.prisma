@@ -40,7 +40,7 @@ model PasswordResetToken {
 model Goals {
   id          String   @id @default(cuid())
   userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   calorieMin  Int      @default(2400)
   calorieMax  Int      @default(2600)
   proteinMin  Int      @default(176)
@@ -55,7 +55,7 @@ model Goals {
 model MealEntry {
   id          String   @id @default(cuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date        DateTime
   mealType    String
   foodName    String
@@ -66,12 +66,14 @@ model MealEntry {
   servingSize Float    @default(100)
   servingUnit String   @default("g")
   createdAt   DateTime @default(now())
+
+  @@index([userId, date])
 }
 
 model WorkoutSession {
   id          String   @id @default(cuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date        DateTime
   splitDay    String
   exercises   Json
@@ -79,12 +81,14 @@ model WorkoutSession {
   source      String   @default("manual")
   notes       String?
   createdAt   DateTime @default(now())
+
+  @@index([userId, date])
 }
 
 model HealthData {
   id              String   @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id])
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date            DateTime
   activeCalories  Float?
   restingCalories Float?
@@ -163,4 +167,6 @@ model WaterEntry {
   date      DateTime
   amount    Float
   createdAt DateTime @default(now())
+
+  @@index([userId, date])
 }

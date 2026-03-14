@@ -3,6 +3,14 @@ import prisma from '../lib/prisma.js';
 
 const router = Router();
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDate(str) {
+  if (!DATE_RE.test(str)) return null;
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : str;
+}
+
 async function buildDaySummary(userId, dateStr) {
   const start = new Date(dateStr);
   start.setUTCHours(0, 0, 0, 0);
@@ -61,7 +69,9 @@ async function buildDaySummary(userId, dateStr) {
 router.get('/summary', async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    const raw = req.query.date || new Date().toISOString().slice(0, 10);
+    const date = parseDate(raw);
+    if (!date) return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
     const summary = await buildDaySummary(userId, date);
     res.json(summary);
   } catch (err) {
@@ -73,7 +83,9 @@ router.get('/summary', async (req, res, next) => {
 router.get('/weekly', async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const startDate = req.query.startDate || new Date().toISOString().slice(0, 10);
+    const raw = req.query.startDate || new Date().toISOString().slice(0, 10);
+    const startDate = parseDate(raw);
+    if (!startDate) return res.status(400).json({ error: 'startDate must be in YYYY-MM-DD format' });
     const start = new Date(startDate);
 
     const days = [];
@@ -94,7 +106,9 @@ router.get('/weekly', async (req, res, next) => {
 router.get('/range', async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const startDate = req.query.startDate || new Date().toISOString().slice(0, 10);
+    const raw = req.query.startDate || new Date().toISOString().slice(0, 10);
+    const startDate = parseDate(raw);
+    if (!startDate) return res.status(400).json({ error: 'startDate must be in YYYY-MM-DD format' });
     const numDays = Math.min(parseInt(req.query.numDays) || 7, 31);
     const start = new Date(startDate);
 

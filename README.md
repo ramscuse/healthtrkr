@@ -1,4 +1,4 @@
-# FitTrack
+# healthtrkr
 
 A personal web-based fitness tracker with calorie/protein logging, workout tracking, Apple Watch data sync, and weekly progress charts. Built with React, Express, PostgreSQL, and Prisma while leveraging Claude Code.
 
@@ -29,7 +29,7 @@ cp .env.example .env
 Edit `.env` and set your values:
 
 ```env
-DATABASE_URL="postgresql://postgres:your-password@localhost:5432/fittrack"
+DATABASE_URL="postgresql://postgres:your-password@localhost:5432/healthtrkr"
 JWT_SECRET="generate-a-long-random-string-here"
 PORT=3001
 VITE_API_URL=http://localhost:3001
@@ -50,7 +50,7 @@ EMAILJS_PRIVATE_KEY=your-private-key
 
 ```bash
 # 4. Create the database (if it doesn't exist)
-psql "postgresql://postgres:your-password@localhost:5432/postgres" -c "CREATE DATABASE fittrack;"
+psql "postgresql://postgres:your-password@localhost:5432/postgres" -c "CREATE DATABASE healthtrkr;"
 
 # 5. Run migrations
 npm run db:migrate
@@ -117,7 +117,7 @@ The response includes `user.id` — copy that value.
 
 ## Apple Watch Integration (Health Auto Export)
 
-FitTrack ingests Apple Watch data using the **Health Auto Export** iOS app (~$4 one-time, App Store).
+healthtrkr ingests Apple Watch data using the **Health Auto Export** iOS app (~$4 one-time, App Store).
 
 ### Setup
 
@@ -134,7 +134,7 @@ FitTrack ingests Apple Watch data using the **Health Auto Export** iOS app (~$4 
    | Header | Value |
    |---|---|
    | `x-sync-token` | The value of `HEALTH_SYNC_TOKEN` from your `.env` |
-   | `x-user-id` | Your FitTrack user ID (see above) |
+   | `x-user-id` | Your healthtrkr user ID (see above) |
 
 5. Select these **Metrics** to export:
    - Active Energy
@@ -182,6 +182,34 @@ Just register a new account at `/login` (Register tab). Each user has fully isol
 ---
 
 ## Production Build
+
+### Local Docker (build from source)
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+### Server deploy (pull pre-built image from GHCR)
+
+Push to `main` triggers a GitHub Actions build that publishes to `ghcr.io/YOUR_GITHUB_USERNAME/healthtrkr:latest`.
+
+On the server — only two files needed, no source code:
+
+```bash
+# 1. Copy docker-compose.deploy.yml and create .env
+nano .env          # set DATA, POSTGRES_PASSWORD, JWT_SECRET, HEALTH_SYNC_TOKEN, CORS_ORIGIN
+
+# 2. Pull and start
+docker compose -f docker-compose.deploy.yml pull
+docker compose -f docker-compose.deploy.yml up -d
+
+# 3. Update to latest image in future
+docker compose -f docker-compose.deploy.yml pull
+docker compose -f docker-compose.deploy.yml up -d
+```
+
+### Local production server (no Docker)
 
 ```bash
 npm run build

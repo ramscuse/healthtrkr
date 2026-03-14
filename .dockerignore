@@ -1,0 +1,14 @@
+node_modules
+.env
+src/dist
+.git
+*.log
+.DS_Store
+data/foods.json
+.claude/
+docker-compose*.yml
+Dockerfile
+README.md
+FitTrack_Agent_Instructions.md
+.github/
+*.md

@@ -6,3 +6,4 @@ src/dist/
 .DS_Store
 data/foods.json
 .claude/
+docker-compose.override.yml

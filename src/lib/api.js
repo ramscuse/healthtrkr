@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
 async function request(path, options = {}) {
   const token = localStorage.getItem('token')
@@ -30,6 +30,7 @@ async function request(path, options = {}) {
     throw new Error(body.error || `Request failed with status ${response.status}`)
   }
 
+  if (response.status === 204) return null;
   return response.json()
 }
 
@@ -90,13 +91,7 @@ export async function addMeal(data) {
 }
 
 export async function deleteMeal(id) {
-  const token = localStorage.getItem('token')
-  const response = await fetch(`${BASE_URL}/api/meals/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` }
-  })
-  if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; return }
-  if (!response.ok) throw new Error('Failed to delete meal')
+  return request(`/api/meals/${id}`, { method: 'DELETE' })
 }
 
 export async function getWorkoutTemplate() {
@@ -131,13 +126,7 @@ export async function createCustomFood(data) {
 }
 
 export async function deleteCustomFood(id) {
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${BASE_URL}/api/meals/custom-foods/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; return }
-  if (!res.ok) throw new Error('Failed to delete custom food')
+  return request(`/api/meals/custom-foods/${id}`, { method: 'DELETE' })
 }
 
 export async function getPresets() {
@@ -153,13 +142,7 @@ export async function updatePreset(id, data) {
 }
 
 export async function deletePreset(id) {
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${BASE_URL}/api/meals/presets/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; return }
-  if (!res.ok) throw new Error('Failed to delete preset')
+  return request(`/api/meals/presets/${id}`, { method: 'DELETE' })
 }
 
 export async function logPreset(presetId, { date, mealType }) {
@@ -178,13 +161,7 @@ export async function createCustomExercise(data) {
 }
 
 export async function deleteCustomExercise(id) {
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${BASE_URL}/api/workouts/custom-exercises/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; return }
-  if (!res.ok) throw new Error('Failed to delete exercise')
+  return request(`/api/workouts/custom-exercises/${id}`, { method: 'DELETE' })
 }
 
 export async function getWorkoutPresets() {
@@ -200,13 +177,7 @@ export async function updateWorkoutPreset(id, data) {
 }
 
 export async function deleteWorkoutPreset(id) {
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${BASE_URL}/api/workouts/presets/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; return }
-  if (!res.ok) throw new Error('Failed to delete preset')
+  return request(`/api/workouts/presets/${id}`, { method: 'DELETE' })
 }
 
 export async function getWaterToday() {
@@ -222,13 +193,7 @@ export async function logWater(data) {
 }
 
 export async function deleteWaterEntry(id) {
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${BASE_URL}/api/water/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; return }
-  if (!res.ok) throw new Error('Failed to delete entry')
+  return request(`/api/water/${id}`, { method: 'DELETE' })
 }
 
 export async function getAccount() {

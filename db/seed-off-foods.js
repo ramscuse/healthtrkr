@@ -21,7 +21,7 @@ const FOODS_FILE = join(__dirname, '..', 'data', 'foods.json');
 // Direct S3 URL — avoids a redirect hop that can be unreliable
 const JSONL_URL = 'https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/openfoodfacts-products.jsonl.gz';
 const MAX_NEW = 30_000;
-const USER_AGENT = 'FitTrackApp/1.0 (personal fitness tracker; non-commercial)';
+const USER_AGENT = 'healthtrkr/1.0 (personal fitness tracker; non-commercial)';
 
 
 // --- Load existing foods ---

@@ -25,8 +25,8 @@ router.put('/', async (req, res, next) => {
 
     const numericFields = { calorieMin, calorieMax, proteinMin, proteinMax, carbsGoal, fatGoal, waterGoal, startWeight };
     for (const [key, val] of Object.entries(numericFields)) {
-      if (val !== undefined && (typeof val !== 'number' || !isFinite(val))) {
-        return res.status(400).json({ error: `${key} must be a finite number` });
+      if (val !== undefined && (typeof val !== 'number' || !isFinite(val) || val < 0)) {
+        return res.status(400).json({ error: `${key} must be a non-negative finite number` });
       }
     }
 

@@ -171,7 +171,7 @@ router.delete('/presets/:id', async (req, res, next) => {
 router.get('/history', async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const limit = parseInt(req.query.limit) || 30;
+    const limit = Math.min(parseInt(req.query.limit) || 30, 100);
 
     const sessions = await prisma.workoutSession.findMany({
       where: { userId },
@@ -225,6 +225,9 @@ router.post('/', async (req, res, next) => {
     }
     const parsedDate = parseDate(date);
     if (!parsedDate) return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
+    if (durationMin !== undefined && (!Number.isInteger(durationMin) || durationMin < 0)) {
+      return res.status(400).json({ error: 'durationMin must be a non-negative integer' });
+    }
 
     const session = await prisma.workoutSession.create({
       data: { userId, date: parsedDate, splitDay, exercises, durationMin, notes },
@@ -253,6 +256,9 @@ router.put('/:id', async (req, res, next) => {
     if (exercises !== undefined && !Array.isArray(exercises)) {
       return res.status(400).json({ error: 'exercises must be an array' });
     }
+    if (durationMin !== undefined && (!Number.isInteger(durationMin) || durationMin < 0)) {
+      return res.status(400).json({ error: 'durationMin must be a non-negative integer' });
+    }
 
     const session = await prisma.workoutSession.update({
       where: { id },
@@ -260,6 +266,20 @@ router.put('/:id', async (req, res, next) => {
     });
 
     res.json(session);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+    const { id } = req.params;
+    const existing = await prisma.workoutSession.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Workout session not found' });
+    if (existing.userId !== userId) return res.status(403).json({ error: 'Not authorized' });
+    await prisma.workoutSession.delete({ where: { id } });
+    res.status(204).end();
   } catch (err) {
     next(err);
   }
