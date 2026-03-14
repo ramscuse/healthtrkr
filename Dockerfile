@@ -19,7 +19,8 @@ FROM node:20-alpine
 WORKDIR /app
 
 # OpenSSL is required by the Prisma query engine on Alpine
-RUN apk add --no-cache openssl
+# curl is required by the food database seed scripts
+RUN apk add --no-cache openssl curl
 
 # Install production dependencies only
 COPY package*.json ./
