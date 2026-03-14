@@ -1,7 +1,26 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
+export function getToken() {
+  return localStorage.getItem('token') || sessionStorage.getItem('token')
+}
+
+export function setToken(token, rememberMe) {
+  if (rememberMe) {
+    sessionStorage.removeItem('token')
+    localStorage.setItem('token', token)
+  } else {
+    localStorage.removeItem('token')
+    sessionStorage.setItem('token', token)
+  }
+}
+
+export function clearToken() {
+  localStorage.removeItem('token')
+  sessionStorage.removeItem('token')
+}
+
 async function request(path, options = {}) {
-  const token = localStorage.getItem('token')
+  const token = getToken()
 
   const headers = {
     'Content-Type': 'application/json',
@@ -15,7 +34,7 @@ async function request(path, options = {}) {
   })
 
   if (response.status === 401) {
-    localStorage.removeItem('token')
+    clearToken()
     window.location.href = '/login'
     return
   }
@@ -34,10 +53,10 @@ async function request(path, options = {}) {
   return response.json()
 }
 
-export async function login(email, password) {
+export async function login(email, password, rememberMe = false) {
   return request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password, rememberMe })
   })
 }
 

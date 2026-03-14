@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login, register, forgotPassword, resetPassword } from '../lib/api.js'
+import { login, register, forgotPassword, resetPassword, setToken } from '../lib/api.js'
 
 // view: 'login' | 'register' | 'forgot' | 'reset'
 export default function Auth() {
@@ -11,6 +11,7 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -33,11 +34,11 @@ export default function Auth() {
     try {
       let data
       if (view === 'login') {
-        data = await login(email, password)
+        data = await login(email, password, rememberMe)
       } else {
         data = await register(email, password, name)
       }
-      localStorage.setItem('token', data.token)
+      setToken(data.token, view === 'login' ? rememberMe : false)
       navigate('/')
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
@@ -313,6 +314,18 @@ export default function Auth() {
                 className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>
+
+            {view === 'login' && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={e => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">Remember me</span>
+              </label>
+            )}
 
             <button
               type="submit"

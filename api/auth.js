@@ -29,7 +29,7 @@ router.post('/register', async (req, res, next) => {
       data: { email, password: hashed, name },
     });
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
     res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
@@ -39,7 +39,7 @@ router.post('/register', async (req, res, next) => {
 
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'email and password are required' });
@@ -55,7 +55,8 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const expiresIn = rememberMe === true ? '30d' : '1d';
+    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn });
 
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {

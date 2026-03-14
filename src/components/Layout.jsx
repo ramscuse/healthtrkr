@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { clearToken } from '../lib/api.js'
 
 function HomeIcon({ className = 'w-5 h-5' }) {
   return (
@@ -53,7 +54,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate()
 
   function handleLogout() {
-    localStorage.removeItem('token')
+    clearToken()
     navigate('/login')
   }
 
