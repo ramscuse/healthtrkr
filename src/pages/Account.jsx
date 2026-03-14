@@ -43,12 +43,10 @@ export default function Account() {
   async function handleSaveGoals() {
     setGoalsSaving(true); setGoalsError(''); setGoalsSaved(false)
     try {
-      const payload = {
-        calorieMin: Number(goalsForm.calorieMin) || null,
-        calorieMax: Number(goalsForm.calorieMax) || null,
-        proteinMin: Number(goalsForm.proteinMin) || null,
-        proteinMax: Number(goalsForm.proteinMax) || null,
-        waterGoal:  Number(goalsForm.waterGoal)  || null,
+      const payload = {}
+      for (const [key, val] of Object.entries(goalsForm)) {
+        const n = Number(val)
+        if (val !== '' && Number.isFinite(n)) payload[key] = n
       }
       const updated = await updateGoals(payload)
       setGoals(updated)
@@ -133,7 +131,17 @@ export default function Account() {
                 className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg px-3 py-1.5 transition-colors">
                 {goalsSaving ? 'Saving…' : 'Save'}
               </button>
-              <button type="button" onClick={() => { setGoalsEditing(false); setGoalsError('') }}
+              <button type="button" onClick={() => {
+                setGoalsEditing(false)
+                setGoalsError('')
+                setGoalsForm({
+                  calorieMin: goals?.calorieMin ?? '',
+                  calorieMax: goals?.calorieMax ?? '',
+                  proteinMin: goals?.proteinMin ?? '',
+                  proteinMax: goals?.proteinMax ?? '',
+                  waterGoal:  goals?.waterGoal  ?? '',
+                })
+              }}
                 className="text-xs font-semibold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors">
                 Cancel
               </button>

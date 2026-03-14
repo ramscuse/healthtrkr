@@ -59,12 +59,8 @@ const navItems = [
 ]
 
 const mobileNavItems = [
-  { to: '/',          mobileLabel: 'Home',      Icon: HomeIcon },
-  { to: '/meals',     mobileLabel: 'Meals',     Icon: MealsIcon },
-  { to: '/workouts',  mobileLabel: 'Workouts',  Icon: WorkoutsIcon },
-  { to: '/water',     mobileLabel: 'Water',     Icon: WaterIcon },
-  { to: '/progress',  mobileLabel: 'Progress',  Icon: ProgressIcon },
-  { to: '/account',   mobileLabel: 'Account',   Icon: AccountIcon },
+  ...navItems,
+  { to: '/account', label: 'Account', mobileLabel: 'Account', Icon: AccountIcon },
 ]
 
 export default function Layout({ children }) {
