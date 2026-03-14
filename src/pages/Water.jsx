@@ -107,6 +107,7 @@ export default function Water() {
           value={selectedDate}
           max={today}
           onChange={e => setSelectedDate(e.target.value)}
+          style={{ fontSize: '16px' }}
           className="border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
         />
       </div>
@@ -123,6 +124,8 @@ export default function Water() {
           ) : (
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={goalInput} onChange={e => { setGoalInput(e.target.value); setGoalError('') }}
+                inputMode="numeric"
+                style={{ fontSize: '16px' }}
                 className="w-20 border border-sky-200 dark:border-sky-700 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
               <span className="text-xs text-sky-500 dark:text-sky-400">oz</span>
               <button type="button" onClick={handleSaveWaterGoal} disabled={goalSaving}
@@ -175,6 +178,8 @@ export default function Water() {
             value={customAmt}
             onChange={e => { setCustomAmt(e.target.value); setAddError('') }}
             onKeyDown={e => e.key === 'Enter' && handleCustomAdd()}
+            inputMode="decimal"
+            style={{ fontSize: '16px' }}
             className="flex-1 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
           />
           <button type="button" onClick={handleCustomAdd} disabled={adding}

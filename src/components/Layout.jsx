@@ -42,12 +42,25 @@ function ProgressIcon({ className = 'w-5 h-5' }) {
   )
 }
 
+function AccountIcon({ className = 'w-5 h-5' }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.751 20.105a8.25 8.25 0 0 1 16.498 0 .75.75 0 0 1-.437.695A18.683 18.683 0 0 1 12 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 0 1-.437-.695Z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
 const navItems = [
   { to: '/',          label: 'Dashboard', mobileLabel: 'Home',      Icon: HomeIcon },
   { to: '/meals',     label: 'Meals',     mobileLabel: 'Meals',     Icon: MealsIcon },
   { to: '/workouts',  label: 'Workouts',  mobileLabel: 'Workouts',  Icon: WorkoutsIcon },
   { to: '/water',     label: 'Water',     mobileLabel: 'Water',     Icon: WaterIcon },
   { to: '/progress',  label: 'Progress',  mobileLabel: 'Progress',  Icon: ProgressIcon },
+]
+
+const mobileNavItems = [
+  ...navItems,
+  { to: '/account', label: 'Account', mobileLabel: 'Account', Icon: AccountIcon },
 ]
 
 export default function Layout({ children }) {
@@ -59,7 +72,7 @@ export default function Layout({ children }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-[100dvh] overflow-hidden">
       {/* Sidebar — desktop only */}
       <aside className="hidden md:flex flex-col w-56 bg-gray-900 text-white flex-shrink-0">
         <div className="px-6 py-5 border-b border-gray-700">
@@ -117,7 +130,7 @@ export default function Layout({ children }) {
 
       {/* Bottom tab bar — mobile only */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex pb-[env(safe-area-inset-bottom)]">
-        {navItems.map(({ to, mobileLabel, Icon }) => (
+        {mobileNavItems.map(({ to, mobileLabel, Icon }) => (
           <NavLink
             key={to}
             to={to}
