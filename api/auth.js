@@ -16,7 +16,8 @@ const BASE_COOKIE_OPTS = {
 };
 
 function setAuthCookie(res, token, rememberMe) {
-  const maxAge = rememberMe === true ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  // rememberMe tokens never expire — use a 10-year maxAge so the browser keeps the cookie
+  const maxAge = rememberMe === true ? 10 * 365 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
   res.cookie('token', token, { ...BASE_COOKIE_OPTS, maxAge });
 }
 
@@ -68,8 +69,9 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const expiresIn = rememberMe === true ? '30d' : '24h';
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn });
+    // rememberMe tokens have no expiry; session-only tokens expire after 24h
+    const signOptions = rememberMe === true ? {} : { expiresIn: '24h' };
+    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, signOptions);
 
     setAuthCookie(res, token, rememberMe === true);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
@@ -186,6 +188,28 @@ router.post('/reset-password', async (req, res, next) => {
     next(err)
   }
 })
+
+// GET /api/auth/me — recover session from HTTP-only cookie (no Authorization header needed)
+// Used by the frontend when localStorage is missing the token (e.g. iOS cleared it).
+// Issues a fresh token rather than echoing the cookie value so the raw HTTP-only
+// cookie token is never exposed to client-side JavaScript.
+router.get('/me', (req, res) => {
+  const token = req.cookies?.token;
+  if (!token) return res.status(401).json({ error: 'No session' });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    // Re-issue a fresh token rather than echoing the cookie value so the raw HTTP-only
+    // cookie token is never exposed to client-side JavaScript.
+    // Preserve no-expiry for rememberMe tokens; honour remaining lifetime for session tokens.
+    const signOptions = payload.exp === undefined
+      ? {}
+      : { expiresIn: payload.exp - Math.floor(Date.now() / 1000) };
+    const newToken = jwt.sign({ userId: payload.userId }, process.env.JWT_SECRET, signOptions);
+    res.json({ token: newToken });
+  } catch {
+    res.status(401).json({ error: 'Session expired' });
+  }
+});
 
 router.post('/logout', (req, res) => {
   res.clearCookie('token', BASE_COOKIE_OPTS);
