@@ -8,6 +8,18 @@ import { sendPasswordResetEmail } from '../lib/email.js';
 const router = Router();
 const SALT_ROUNDS = 12;
 
+const BASE_COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  path: '/',
+  ...(process.env.NODE_ENV === 'production' && { secure: true }),
+};
+
+function setAuthCookie(res, token, rememberMe) {
+  const maxAge = rememberMe === true ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  res.cookie('token', token, { ...BASE_COOKIE_OPTS, maxAge });
+}
+
 router.post('/register', async (req, res, next) => {
   try {
     const { email, password, name } = req.body;
@@ -31,6 +43,7 @@ router.post('/register', async (req, res, next) => {
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
+    setAuthCookie(res, token, false);
     res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
     next(err);
@@ -58,6 +71,7 @@ router.post('/login', async (req, res, next) => {
     const expiresIn = rememberMe === true ? '30d' : '24h';
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn });
 
+    setAuthCookie(res, token, rememberMe === true);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
     next(err);
@@ -68,13 +82,14 @@ router.post('/login', async (req, res, next) => {
 router.put('/password', async (req, res, next) => {
   try {
     const header = req.headers.authorization;
-    if (!header || !header.startsWith('Bearer ')) {
+    const token = (header?.startsWith('Bearer ') ? header.slice(7) : null) ?? req.cookies?.token;
+    if (!token) {
       return res.status(401).json({ error: 'Missing or invalid authorization header' });
     }
 
     let payload;
     try {
-      payload = jwt.verify(header.slice(7), process.env.JWT_SECRET, { algorithms: ['HS256'] });
+      payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     } catch {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
@@ -171,5 +186,10 @@ router.post('/reset-password', async (req, res, next) => {
     next(err)
   }
 })
+
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', BASE_COOKIE_OPTS);
+  res.json({ message: 'Logged out' });
+});
 
 export default router;
