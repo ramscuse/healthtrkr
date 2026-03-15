@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { clearToken } from '../lib/api.js'
+import { clearToken, logout } from '../lib/api.js'
 
 function HomeIcon({ className = 'w-5 h-5' }) {
   return (
@@ -66,7 +66,8 @@ const mobileNavItems = [
 export default function Layout({ children }) {
   const navigate = useNavigate()
 
-  function handleLogout() {
+  async function handleLogout() {
+    try { await logout() } catch { /* ignore */ }
     clearToken()
     navigate('/login')
   }

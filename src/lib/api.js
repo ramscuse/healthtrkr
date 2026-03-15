@@ -61,6 +61,7 @@ async function request(path, options = {}) {
 
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
+    credentials: 'include',
     headers
   })
 
@@ -110,6 +111,10 @@ export async function resetPassword(email, code, newPassword) {
     method: 'POST',
     body: JSON.stringify({ email, code, newPassword })
   })
+}
+
+export async function logout() {
+  return request('/api/auth/logout', { method: 'POST' })
 }
 
 export async function getGoals() {

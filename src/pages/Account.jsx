@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { changePassword, getAccount, getGoals, updateGoals, clearToken } from '../lib/api.js'
+import { changePassword, getAccount, getGoals, updateGoals, clearToken, logout } from '../lib/api.js'
 import { useDarkMode } from '../context/ThemeContext.jsx'
 
 export default function Account() {
@@ -88,7 +88,8 @@ export default function Account() {
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    try { await logout() } catch { /* ignore */ }
     clearToken()
     navigate('/login')
   }
