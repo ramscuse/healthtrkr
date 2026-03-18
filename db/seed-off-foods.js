@@ -3,7 +3,9 @@
  * complete nutrition data, and merges them into data/foods.json alongside
  * the existing USDA data.
  *
- * Run once: node db/seed-off-foods.js
+ * Run once: node db/seed-off-foods.js [limit]
+ *   limit — optional number of new foods to collect (default: 30 000)
+ *   e.g.: npm run db:seed-off-foods -- 60000
  *
  * Streams line-by-line through the gzip-compressed JSONL, stops as soon as
  * MAX_NEW new foods have been collected — no need to download the full file.
@@ -20,8 +22,17 @@ const FOODS_FILE = join(__dirname, '..', 'data', 'foods.json');
 
 // Direct S3 URL — avoids a redirect hop that can be unreliable
 const JSONL_URL = 'https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/openfoodfacts-products.jsonl.gz';
-const MAX_NEW = 30_000;
 const USER_AGENT = 'healthtrkr/1.0 (personal fitness tracker; non-commercial)';
+
+// Allow caller to override the limit: `npm run db:seed-off-foods -- 60000`
+const MAX_NEW = (() => {
+  const arg = process.argv[2];
+  if (arg !== undefined && /^\d+$/.test(arg)) {
+    const n = Number(arg);
+    if (Number.isSafeInteger(n) && n > 0) return n;
+  }
+  return 30_000; // default
+})();
 
 
 // --- Load existing foods ---
