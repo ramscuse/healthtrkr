@@ -21,14 +21,16 @@ export function getToken() {
   const token = localStorage.getItem('token')
   if (!token) return null
 
-  const rememberMe = localStorage.getItem('rememberMe')
-  if (rememberMe !== 'true') {
-    const payload = decodeJwtPayload(token)
-    if (!payload || !payload.iat) {
-      clearToken()
-      return null
-    }
-    const ageHours = (Date.now() / 1000 - payload.iat) / 3600
+  const payload = decodeJwtPayload(token)
+  if (!payload) {
+    clearToken()
+    return null
+  }
+
+  // Session tokens have an exp claim; rememberMe tokens do not.
+  // Only age-check session tokens — rememberMe tokens are valid indefinitely.
+  if (payload.exp !== undefined) {
+    const ageHours = (Date.now() / 1000 - (payload.iat ?? 0)) / 3600
     if (ageHours > PWA_SESSION_HOURS) {
       clearToken()
       return null
@@ -54,7 +56,7 @@ export function clearToken() {
 // iOS can clear localStorage under certain conditions even though the cookie persists.
 export async function tryRefreshFromCookie() {
   try {
-    const response = await fetch('/api/auth/me', {
+    const response = await fetch(`${BASE_URL}/api/auth/me`, {
       credentials: 'include',
     })
     if (!response.ok) return null

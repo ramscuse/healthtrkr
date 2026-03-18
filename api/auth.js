@@ -200,10 +200,11 @@ router.get('/me', (req, res) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     // Re-issue a fresh token rather than echoing the cookie value so the raw HTTP-only
     // cookie token is never exposed to client-side JavaScript.
-    // Preserve no-expiry for rememberMe tokens; honour remaining lifetime for session tokens.
+    // The cookie's Max-Age is the real session boundary — if the browser sent the cookie,
+    // it's still valid. Issue a fresh token: no expiry for rememberMe, 24h for sessions.
     const signOptions = payload.exp === undefined
       ? {}
-      : { expiresIn: payload.exp - Math.floor(Date.now() / 1000) };
+      : { expiresIn: '24h' };
     const newToken = jwt.sign({ userId: payload.userId }, process.env.JWT_SECRET, signOptions);
     res.json({ token: newToken });
   } catch {
