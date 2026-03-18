@@ -53,15 +53,19 @@ router.get('/barcode/:barcode', async (req, res, next) => {
     if (data.status !== 1) return res.status(404).json({ error: 'Product not found' });
 
     const p = data.product;
-    res.json({
-      name: p.product_name || '',
-      calories: p.nutriments?.['energy-kcal_100g'] ?? 0,
-      protein: p.nutriments?.proteins_100g ?? 0,
-      carbs: p.nutriments?.carbohydrates_100g ?? 0,
-      fat: p.nutriments?.fat_100g ?? 0,
-      servingSize: 100,
-      barcode,
-    });
+    const calories = Number(p.nutriments?.['energy-kcal_100g'] ?? 0);
+    const protein  = Number(p.nutriments?.proteins_100g ?? 0);
+    const carbs    = Number(p.nutriments?.carbohydrates_100g ?? 0);
+    const fat      = Number(p.nutriments?.fat_100g ?? 0);
+
+    // Reject physically impossible or non-numeric nutrition data (e.g. OFf string values)
+    if (!isFinite(calories) || !isFinite(protein) || !isFinite(carbs) || !isFinite(fat) ||
+        calories < 0 || protein < 0 || carbs < 0 || fat < 0 ||
+        protein + carbs + fat > 100 || calories > 900) {
+      return res.status(404).json({ error: 'Product nutrition data is unavailable' });
+    }
+
+    res.json({ name: p.product_name || '', calories, protein, carbs, fat, servingSize: 100, barcode });
   } catch (err) {
     next(err);
   }
