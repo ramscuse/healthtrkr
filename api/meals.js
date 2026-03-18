@@ -58,7 +58,7 @@ router.get('/barcode/:barcode', async (req, res, next) => {
     const carbs    = p.nutriments?.carbohydrates_100g ?? 0;
     const fat      = p.nutriments?.fat_100g ?? 0;
 
-    // Reject physically impossible nutrition data from OFf crowdsourced entries
+    // Reject physically impossible nutrition data from Open Food Facts crowdsourced entries
     if (protein + carbs + fat > 100 || calories > 900) {
       return res.status(404).json({ error: 'Product nutrition data is unavailable' });
     }
