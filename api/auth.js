@@ -201,10 +201,15 @@ router.get('/me', (req, res) => {
     // Re-issue a fresh token rather than echoing the cookie value so the raw HTTP-only
     // cookie token is never exposed to client-side JavaScript.
     // The cookie's Max-Age is the real session boundary — if the browser sent the cookie,
-    // it's still valid. Issue a fresh token: no expiry for rememberMe, 24h for sessions.
-    const signOptions = payload.exp === undefined
-      ? {}
-      : { expiresIn: '24h' };
+    // it's still valid. Re-issue with the remaining lifetime so we never extend the session.
+    let signOptions = {};
+    if (payload.exp !== undefined) {
+      const remainingSeconds = payload.exp - Math.floor(Date.now() / 1000);
+      if (remainingSeconds <= 0) {
+        return res.status(401).json({ error: 'Session expired' });
+      }
+      signOptions = { expiresIn: remainingSeconds };
+    }
     const newToken = jwt.sign({ userId: payload.userId }, process.env.JWT_SECRET, signOptions);
     res.json({ token: newToken });
   } catch {
