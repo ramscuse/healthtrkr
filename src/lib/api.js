@@ -21,14 +21,16 @@ export function getToken() {
   const token = localStorage.getItem('token')
   if (!token) return null
 
-  const rememberMe = localStorage.getItem('rememberMe')
-  if (rememberMe !== 'true') {
-    const payload = decodeJwtPayload(token)
-    if (!payload || !payload.iat) {
-      clearToken()
-      return null
-    }
-    const ageHours = (Date.now() / 1000 - payload.iat) / 3600
+  const payload = decodeJwtPayload(token)
+  if (!payload) {
+    clearToken()
+    return null
+  }
+
+  // Session tokens have an exp claim; rememberMe tokens do not.
+  // Only age-check session tokens — rememberMe tokens are valid indefinitely.
+  if (payload.exp !== undefined) {
+    const ageHours = (Date.now() / 1000 - (payload.iat ?? 0)) / 3600
     if (ageHours > PWA_SESSION_HOURS) {
       clearToken()
       return null
@@ -38,32 +40,27 @@ export function getToken() {
   return token
 }
 
-export function setToken(token, rememberMe) {
+export function setToken(token) {
   localStorage.setItem('token', token)
-  localStorage.setItem('rememberMe', rememberMe ? 'true' : 'false')
   sessionStorage.removeItem('token')
 }
 
 export function clearToken() {
   localStorage.removeItem('token')
   sessionStorage.removeItem('token')
-  localStorage.removeItem('rememberMe')
 }
 
 // Try to recover a session from the HTTP-only cookie when localStorage is empty.
 // iOS can clear localStorage under certain conditions even though the cookie persists.
 export async function tryRefreshFromCookie() {
   try {
-    const response = await fetch('/api/auth/me', {
+    const response = await fetch(`${BASE_URL}/api/auth/me`, {
       credentials: 'include',
     })
     if (!response.ok) return null
     const data = await response.json()
     if (!data.token) return null
-    // No exp claim = rememberMe token (never expires); otherwise check remaining lifetime
-    const payload = decodeJwtPayload(data.token)
-    const isLongLived = !payload?.exp || (payload.exp - Date.now() / 1000) > 24 * 3600
-    setToken(data.token, isLongLived)
+    setToken(data.token)
     return data.token
   } catch {
     return null
