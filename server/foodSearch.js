@@ -30,6 +30,9 @@ function score(foodName, queryWords) {
     // If any query word has zero match, penalise heavily
     total -= 10;
   }
+  // Prefer USDA-style "Category, descriptor, preparation" names over generic product names.
+  // USDA entries use comma-separated format and tend to be more nutritionally accurate.
+  if (foodName.includes(',')) total += 1;
   return total;
 }
 

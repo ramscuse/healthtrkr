@@ -72,17 +72,19 @@ await new Promise((resolve, reject) => {
     const cal = p.nutriments?.['energy-kcal_100g'] ?? 0;
     if (!(cal > 0)) return;
 
+    const protein = Math.round((p.nutriments?.proteins_100g      ?? 0) * 10) / 10;
+    const carbs   = Math.round((p.nutriments?.carbohydrates_100g ?? 0) * 10) / 10;
+    const fat     = Math.round((p.nutriments?.fat_100g           ?? 0) * 10) / 10;
+
+    // Reject physically impossible entries: macros can't exceed 100g per 100g of food,
+    // and calories can't exceed ~900 kcal/100g (theoretical max for pure fat/oil).
+    if (protein + carbs + fat > 100 || cal > 900) return;
+
     const key = name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
 
-    added.push({
-      name,
-      calories: Math.round(cal),
-      protein:  Math.round((p.nutriments?.proteins_100g      ?? 0) * 10) / 10,
-      carbs:    Math.round((p.nutriments?.carbohydrates_100g ?? 0) * 10) / 10,
-      fat:      Math.round((p.nutriments?.fat_100g           ?? 0) * 10) / 10,
-    });
+    added.push({ name, calories: Math.round(cal), protein, carbs, fat });
 
     if (added.length % 1000 === 0) {
       const mb = (bytesIn / 1024 / 1024).toFixed(0);

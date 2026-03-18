@@ -45,12 +45,20 @@ async function fetchAllForType(dataType) {
       const cal = getNutrient(food.foodNutrients || [], NID.calories);
       if (!food.description || !(cal > 0)) continue;
 
+      const protein = Math.round(getNutrient(food.foodNutrients, NID.protein) * 10) / 10;
+      const carbs   = Math.round(getNutrient(food.foodNutrients, NID.carbs)   * 10) / 10;
+      const fat     = Math.round(getNutrient(food.foodNutrients, NID.fat)     * 10) / 10;
+
+      // Reject physically impossible entries: macros can't exceed 100g per 100g of food,
+      // and calories can't exceed ~900 kcal/100g (theoretical max for pure fat/oil).
+      if (protein + carbs + fat > 100 || cal > 900) continue;
+
       foods.push({
         name: food.description.trim(),
         calories: Math.round(cal),
-        protein: Math.round(getNutrient(food.foodNutrients, NID.protein) * 10) / 10,
-        carbs:   Math.round(getNutrient(food.foodNutrients, NID.carbs)   * 10) / 10,
-        fat:     Math.round(getNutrient(food.foodNutrients, NID.fat)     * 10) / 10,
+        protein,
+        carbs,
+        fat,
       });
     }
 
