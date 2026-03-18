@@ -27,8 +27,10 @@ const USER_AGENT = 'healthtrkr/1.0 (personal fitness tracker; non-commercial)';
 // Allow caller to override the limit: `npm run db:seed-off-foods -- 60000`
 const MAX_NEW = (() => {
   const arg = process.argv[2];
-  const n = arg ? parseInt(arg, 10) : NaN;
-  if (!isNaN(n) && n > 0) return n;
+  if (arg !== undefined && /^\d+$/.test(arg)) {
+    const n = Number(arg);
+    if (Number.isSafeInteger(n) && n > 0) return n;
+  }
   return 30_000; // default
 })();
 
