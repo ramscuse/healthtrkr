@@ -38,7 +38,7 @@ export default function Auth() {
       } else {
         data = await register(email, password, name)
       }
-      setToken(data.token, view === 'login' ? rememberMe : false)
+      setToken(data.token)
       navigate('/')
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')

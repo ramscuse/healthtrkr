@@ -40,16 +40,14 @@ export function getToken() {
   return token
 }
 
-export function setToken(token, rememberMe) {
+export function setToken(token) {
   localStorage.setItem('token', token)
-  localStorage.setItem('rememberMe', rememberMe ? 'true' : 'false')
   sessionStorage.removeItem('token')
 }
 
 export function clearToken() {
   localStorage.removeItem('token')
   sessionStorage.removeItem('token')
-  localStorage.removeItem('rememberMe')
 }
 
 // Try to recover a session from the HTTP-only cookie when localStorage is empty.
@@ -62,10 +60,7 @@ export async function tryRefreshFromCookie() {
     if (!response.ok) return null
     const data = await response.json()
     if (!data.token) return null
-    // No exp claim = rememberMe token (never expires); otherwise check remaining lifetime
-    const payload = decodeJwtPayload(data.token)
-    const isLongLived = !payload?.exp || (payload.exp - Date.now() / 1000) > 24 * 3600
-    setToken(data.token, isLongLived)
+    setToken(data.token)
     return data.token
   } catch {
     return null
