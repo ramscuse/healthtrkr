@@ -27,14 +27,20 @@ export function getToken() {
     return null
   }
 
-  // Session tokens have an exp claim; rememberMe tokens do not.
-  // Only age-check session tokens — rememberMe tokens are valid indefinitely.
-  if (payload.exp !== undefined) {
-    const ageHours = (Date.now() / 1000 - (payload.iat ?? 0)) / 3600
-    if (ageHours > PWA_SESSION_HOURS) {
-      clearToken()
-      return null
-    }
+  // rememberMe tokens carry no exp — valid until explicit logout.
+  if (payload.exp === undefined) return token
+
+  // Session tokens: hard expiry check
+  if (Date.now() / 1000 > payload.exp) {
+    clearToken()
+    return null
+  }
+
+  // Session tokens: PWA session-age check (catches iOS sessionStorage wipe scenario)
+  const ageHours = (Date.now() / 1000 - (payload.iat ?? 0)) / 3600
+  if (ageHours > PWA_SESSION_HOURS) {
+    clearToken()
+    return null
   }
 
   return token
