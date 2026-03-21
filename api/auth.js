@@ -72,8 +72,12 @@ router.post('/login', async (req, res, next) => {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const exp = rememberMe === true ? now + 30 * 24 * 60 * 60 : now + 24 * 60 * 60;
-    const token = jwt.sign({ userId: user.id, iat: now, exp }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+    // rememberMe tokens carry no exp — valid until explicit logout.
+    // Session tokens expire after 24h.
+    const payload = rememberMe === true
+      ? { userId: user.id, iat: now }
+      : { userId: user.id, iat: now, exp: now + 24 * 60 * 60 };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256' });
 
     setAuthCookie(res, token, rememberMe === true);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
@@ -202,12 +206,13 @@ router.get('/me', (req, res) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     // Re-issue a fresh token rather than echoing the cookie value so the raw HTTP-only
     // cookie token is never exposed to client-side JavaScript.
-    // Preserve the original exp (whether rememberMe 30d or session 24h).
-    const newToken = jwt.sign(
-      { userId: payload.userId, iat: Math.floor(Date.now() / 1000), exp: payload.exp },
-      process.env.JWT_SECRET,
-      { algorithm: 'HS256' }
-    );
+    // Re-issue preserving the original session type.
+    // rememberMe tokens have no exp; session tokens carry their original exp.
+    const now = Math.floor(Date.now() / 1000);
+    const reissuePayload = payload.exp !== undefined
+      ? { userId: payload.userId, iat: now, exp: payload.exp }
+      : { userId: payload.userId, iat: now };
+    const newToken = jwt.sign(reissuePayload, process.env.JWT_SECRET, { algorithm: 'HS256' });
     res.json({ token: newToken });
   } catch {
     res.status(401).json({ error: 'Session expired' });

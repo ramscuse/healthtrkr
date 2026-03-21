@@ -22,27 +22,25 @@ export function getToken() {
   if (!token) return null
 
   const payload = decodeJwtPayload(token)
-  if (!payload || !payload.exp) {
+  if (!payload) {
     clearToken()
     return null
   }
 
-  // Hard expiry — token past its own exp claim
+  // rememberMe tokens carry no exp — valid until explicit logout.
+  if (payload.exp === undefined) return token
+
+  // Session tokens: hard expiry check
   if (Date.now() / 1000 > payload.exp) {
     clearToken()
     return null
   }
 
-  // rememberMe tokens have a 30d lifetime; session tokens have 24h.
-  // Infer from the token itself: if lifetime > 25h it was issued as rememberMe.
-  // Only apply the PWA session-age check for session tokens.
-  const lifetimeSeconds = payload.exp - (payload.iat ?? 0)
-  if (lifetimeSeconds <= 25 * 3600) {
-    const ageHours = (Date.now() / 1000 - (payload.iat ?? 0)) / 3600
-    if (ageHours > PWA_SESSION_HOURS) {
-      clearToken()
-      return null
-    }
+  // Session tokens: PWA session-age check (catches iOS sessionStorage wipe scenario)
+  const ageHours = (Date.now() / 1000 - (payload.iat ?? 0)) / 3600
+  if (ageHours > PWA_SESSION_HOURS) {
+    clearToken()
+    return null
   }
 
   return token
