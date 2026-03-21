@@ -80,16 +80,18 @@ await new Promise((resolve, reject) => {
     const name = (p.product_name_en || p.product_name || '').trim();
     if (!name) return;
 
-    const cal = p.nutriments?.['energy-kcal_100g'] ?? 0;
-    if (!(cal > 0)) return;
+    const cal = Number(p.nutriments?.['energy-kcal_100g'] ?? 0);
+    if (!Number.isFinite(cal) || !(cal > 0)) return;
 
-    const protein = Math.round((p.nutriments?.proteins_100g      ?? 0) * 10) / 10;
-    const carbs   = Math.round((p.nutriments?.carbohydrates_100g ?? 0) * 10) / 10;
-    const fat     = Math.round((p.nutriments?.fat_100g           ?? 0) * 10) / 10;
+    const protein = Math.round(Number(p.nutriments?.proteins_100g      ?? 0) * 10) / 10;
+    const carbs   = Math.round(Number(p.nutriments?.carbohydrates_100g ?? 0) * 10) / 10;
+    const fat     = Math.round(Number(p.nutriments?.fat_100g           ?? 0) * 10) / 10;
 
     // Reject physically impossible entries: macros can't exceed 100g per 100g of food,
     // and calories can't exceed ~900 kcal/100g (theoretical max for pure fat/oil).
-    if (protein + carbs + fat > 100 || cal > 900) return;
+    // Also guards against NaN from non-numeric OFf string values.
+    if (!Number.isFinite(protein) || !Number.isFinite(carbs) || !Number.isFinite(fat) ||
+        protein + carbs + fat > 100 || cal > 900) return;
 
     const key = name.toLowerCase();
     if (seen.has(key)) return;
