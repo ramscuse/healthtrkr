@@ -42,7 +42,9 @@ router.post('/register', async (req, res, next) => {
       data: { email, password: hashed, name },
     });
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + 24 * 60 * 60;
+    const token = jwt.sign({ userId: user.id, iat: now, exp }, process.env.JWT_SECRET, { algorithm: 'HS256' });
 
     setAuthCookie(res, token, false);
     res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name } });
@@ -69,9 +71,9 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // rememberMe tokens have no expiry; session-only tokens expire after 24h
-    const signOptions = rememberMe === true ? {} : { expiresIn: '24h' };
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, signOptions);
+    const now = Math.floor(Date.now() / 1000);
+    const exp = rememberMe === true ? now + 30 * 24 * 60 * 60 : now + 24 * 60 * 60;
+    const token = jwt.sign({ userId: user.id, iat: now, exp }, process.env.JWT_SECRET, { algorithm: 'HS256' });
 
     setAuthCookie(res, token, rememberMe === true);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
@@ -200,11 +202,12 @@ router.get('/me', (req, res) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     // Re-issue a fresh token rather than echoing the cookie value so the raw HTTP-only
     // cookie token is never exposed to client-side JavaScript.
-    // Preserve no-expiry for rememberMe tokens; honour remaining lifetime for session tokens.
-    const signOptions = payload.exp === undefined
-      ? {}
-      : { expiresIn: payload.exp - Math.floor(Date.now() / 1000) };
-    const newToken = jwt.sign({ userId: payload.userId }, process.env.JWT_SECRET, signOptions);
+    // Preserve the original exp (whether rememberMe 30d or session 24h).
+    const newToken = jwt.sign(
+      { userId: payload.userId, iat: Math.floor(Date.now() / 1000), exp: payload.exp },
+      process.env.JWT_SECRET,
+      { algorithm: 'HS256' }
+    );
     res.json({ token: newToken });
   } catch {
     res.status(401).json({ error: 'Session expired' });

@@ -4,8 +4,9 @@ import { getAccount, updateAccount } from '../lib/api.js'
 const ThemeContext = createContext({ darkMode: false, toggleDarkMode: () => {} })
 
 function applyThemeColor(dark) {
-  const fallback = document.getElementById('theme-color-fallback')
-  if (fallback) fallback.setAttribute('content', dark ? '#0f172a' : '#ffffff')
+  document.querySelectorAll('meta[name="theme-color"]').forEach(tag => {
+    tag.setAttribute('content', dark ? '#0f172a' : '#ffffff')
+  })
 }
 
 export function ThemeProvider({ children }) {

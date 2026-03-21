@@ -22,17 +22,24 @@ export function getToken() {
   if (!token) return null
 
   const rememberMe = localStorage.getItem('rememberMe')
-  if (rememberMe !== 'true') {
+  if (rememberMe === 'true') {
     const payload = decodeJwtPayload(token)
-    if (!payload || !payload.iat) {
+    if (!payload || !payload.exp || Date.now() / 1000 > payload.exp) {
       clearToken()
       return null
     }
-    const ageHours = (Date.now() / 1000 - payload.iat) / 3600
-    if (ageHours > PWA_SESSION_HOURS) {
-      clearToken()
-      return null
-    }
+    return token
+  }
+
+  const payload = decodeJwtPayload(token)
+  if (!payload || !payload.iat) {
+    clearToken()
+    return null
+  }
+  const ageHours = (Date.now() / 1000 - payload.iat) / 3600
+  if (ageHours > PWA_SESSION_HOURS) {
+    clearToken()
+    return null
   }
 
   return token
