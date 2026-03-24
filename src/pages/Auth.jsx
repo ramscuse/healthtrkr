@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login, register, forgotPassword, resetPassword, setToken } from '../lib/api.js'
+import { login, register, forgotPassword, resetPassword } from '../lib/api.js'
 
 // view: 'login' | 'register' | 'forgot' | 'reset'
 export default function Auth() {
@@ -32,13 +32,11 @@ export default function Auth() {
     setError('')
     setLoading(true)
     try {
-      let data
       if (view === 'login') {
-        data = await login(email, password, rememberMe)
+        await login(email, password, rememberMe)
       } else {
-        data = await register(email, password, name)
+        await register(email, password, name)
       }
-      setToken(data.token)
       navigate('/')
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
