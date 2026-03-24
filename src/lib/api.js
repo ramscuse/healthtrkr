@@ -1,84 +1,19 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? ''
-const parsedPwaSessionHours = Number(import.meta.env.VITE_PWA_SESSION_HOURS ?? 24)
-const PWA_SESSION_HOURS =
-  Number.isFinite(parsedPwaSessionHours) && parsedPwaSessionHours > 0
-    ? parsedPwaSessionHours
-    : 24
 
-function decodeJwtPayload(token) {
-  try {
-    const segment = token.split('.')[1]
-    if (!segment) return null
-    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/')
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
-    return JSON.parse(atob(padded))
-  } catch {
-    return null
-  }
+// Returns true if the server-set sessionHint cookie is present, indicating an
+// active session exists. The actual JWT lives in the httpOnly cookie and is
+// never accessible to JS — this is just a lightweight boolean signal.
+export function isLoggedIn() {
+  return document.cookie.split(';').some(c => c.trim().startsWith('sessionHint='))
 }
 
-export function getToken() {
-  const token = localStorage.getItem('token')
-  if (!token) return null
-
-  const payload = decodeJwtPayload(token)
-  if (!payload) {
-    clearToken()
-    return null
-  }
-
-  // rememberMe tokens carry no exp — valid until explicit logout.
-  if (payload.exp === undefined) return token
-
-  // Session tokens: hard expiry check
-  if (Date.now() / 1000 > payload.exp) {
-    clearToken()
-    return null
-  }
-
-  // Session tokens: PWA session-age check (catches iOS sessionStorage wipe scenario)
-  const ageHours = (Date.now() / 1000 - (payload.iat ?? 0)) / 3600
-  if (ageHours > PWA_SESSION_HOURS) {
-    clearToken()
-    return null
-  }
-
-  return token
-}
-
-export function setToken(token) {
-  localStorage.setItem('token', token)
-  sessionStorage.removeItem('token')
-}
-
-export function clearToken() {
-  localStorage.removeItem('token')
-  sessionStorage.removeItem('token')
-}
-
-// Try to recover a session from the HTTP-only cookie when localStorage is empty.
-// iOS can clear localStorage under certain conditions even though the cookie persists.
-export async function tryRefreshFromCookie() {
-  try {
-    const response = await fetch(`${BASE_URL}/api/auth/me`, {
-      credentials: 'include',
-    })
-    if (!response.ok) return null
-    const data = await response.json()
-    if (!data.token) return null
-    setToken(data.token)
-    return data.token
-  } catch {
-    return null
-  }
+function clearSessionHint() {
+  document.cookie = 'sessionHint=; Max-Age=0; path=/'
 }
 
 async function request(path, options = {}) {
-  const token = getToken()
-
   const headers = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {})
   }
 
@@ -89,7 +24,7 @@ async function request(path, options = {}) {
   })
 
   if (response.status === 401) {
-    clearToken()
+    clearSessionHint()
     window.location.href = '/login'
     return
   }

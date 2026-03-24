@@ -8,17 +8,34 @@ import { sendPasswordResetEmail } from '../lib/email.js';
 const router = Router();
 const SALT_ROUNDS = 12;
 
-const BASE_COOKIE_OPTS = {
+// HTTP-only cookie carrying the JWT (not readable by JS)
+const TOKEN_COOKIE_OPTS = {
   httpOnly: true,
   sameSite: 'lax',
   path: '/',
-  ...(process.env.NODE_ENV === 'production' && { secure: true }),
 };
 
-function setAuthCookie(res, token, rememberMe) {
-  // rememberMe tokens never expire — use a 10-year maxAge so the browser keeps the cookie
-  const maxAge = rememberMe === true ? 10 * 365 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  res.cookie('token', token, { ...BASE_COOKIE_OPTS, maxAge });
+// Non-httpOnly companion cookie used by the frontend as a "logged in" hint.
+// Contains no sensitive data — the actual JWT is in the httpOnly cookie above.
+const HINT_COOKIE_OPTS = {
+  httpOnly: false,
+  sameSite: 'lax',
+  path: '/',
+};
+
+function setAuthCookies(res, token, rememberMe) {
+  // rememberMe: 10-year persistent cookies.  No rememberMe: 24-hour cookies.
+  const maxAge = rememberMe === true
+    ? 10 * 365 * 24 * 60 * 60 * 1000
+    : 24 * 60 * 60 * 1000;
+  res.cookie('token', token, { ...TOKEN_COOKIE_OPTS, maxAge });
+  res.cookie('sessionHint', '1', { ...HINT_COOKIE_OPTS, maxAge });
+}
+
+function clearAuthCookies(res) {
+  const clearOpts = { path: '/', sameSite: 'lax' };
+  res.clearCookie('token', clearOpts);
+  res.clearCookie('sessionHint', clearOpts);
 }
 
 router.post('/register', async (req, res, next) => {
@@ -46,8 +63,8 @@ router.post('/register', async (req, res, next) => {
     const exp = now + 24 * 60 * 60;
     const token = jwt.sign({ userId: user.id, iat: now, exp }, process.env.JWT_SECRET, { algorithm: 'HS256' });
 
-    setAuthCookie(res, token, false);
-    res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name } });
+    setAuthCookies(res, token, false);
+    res.status(201).json({ user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
     next(err);
   }
@@ -79,8 +96,8 @@ router.post('/login', async (req, res, next) => {
       : { userId: user.id, iat: now, exp: now + 24 * 60 * 60 };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256' });
 
-    setAuthCookie(res, token, rememberMe === true);
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+    setAuthCookies(res, token, rememberMe === true);
+    res.json({ user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
     next(err);
   }
@@ -195,32 +212,8 @@ router.post('/reset-password', async (req, res, next) => {
   }
 })
 
-// GET /api/auth/me — recover session from HTTP-only cookie (no Authorization header needed)
-// Used by the frontend when localStorage is missing the token (e.g. iOS cleared it).
-// Issues a fresh token rather than echoing the cookie value so the raw HTTP-only
-// cookie token is never exposed to client-side JavaScript.
-router.get('/me', (req, res) => {
-  const token = req.cookies?.token;
-  if (!token) return res.status(401).json({ error: 'No session' });
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-    // Re-issue a fresh token rather than echoing the cookie value so the raw HTTP-only
-    // cookie token is never exposed to client-side JavaScript.
-    // Re-issue preserving the original session type.
-    // rememberMe tokens have no exp; session tokens carry their original exp.
-    const now = Math.floor(Date.now() / 1000);
-    const reissuePayload = payload.exp !== undefined
-      ? { userId: payload.userId, iat: now, exp: payload.exp }
-      : { userId: payload.userId, iat: now };
-    const newToken = jwt.sign(reissuePayload, process.env.JWT_SECRET, { algorithm: 'HS256' });
-    res.json({ token: newToken });
-  } catch {
-    res.status(401).json({ error: 'Session expired' });
-  }
-});
-
 router.post('/logout', (req, res) => {
-  res.clearCookie('token', BASE_COOKIE_OPTS);
+  clearAuthCookies(res);
   res.json({ message: 'Logged out' });
 });
 
