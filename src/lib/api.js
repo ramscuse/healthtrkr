@@ -99,6 +99,10 @@ export async function searchFood(q) {
   return request(`/api/meals/search?q=${encodeURIComponent(q)}`)
 }
 
+export async function getFoodDetail(foodId) {
+  return request(`/api/meals/foods/${encodeURIComponent(foodId)}`)
+}
+
 export async function addMeal(data) {
   return request('/api/meals', { method: 'POST', body: JSON.stringify(data) })
 }
@@ -136,6 +140,10 @@ export async function getCustomFoods() {
 
 export async function createCustomFood(data) {
   return request('/api/meals/custom-foods', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function updateCustomFood(id, data) {
+  return request(`/api/meals/custom-foods/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
 export async function deleteCustomFood(id) {

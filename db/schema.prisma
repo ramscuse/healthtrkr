@@ -8,18 +8,18 @@ datasource db {
 }
 
 model User {
-  id          String           @id @default(cuid())
-  email       String           @unique
-  password    String
-  name        String
-  darkMode    Boolean          @default(false)
-  createdAt   DateTime         @default(now())
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  darkMode  Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   goals               Goals?
   meals               MealEntry[]
   workouts            WorkoutSession[]
   healthData          HealthData[]
-  customFoods         CustomFood[]
+  foods               Food[]
   mealPresets         MealPreset[]
   customExercises     CustomExercise[]
   workoutPresets      WorkoutPreset[]
@@ -53,21 +53,80 @@ model Goals {
 }
 
 model MealEntry {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  date        DateTime
-  mealType    String
-  foodName    String
-  calories    Float
-  protein     Float
-  carbs       Float
-  fat         Float
-  servingSize Float    @default(100)
-  servingUnit String   @default("g")
-  createdAt   DateTime @default(now())
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  mealType  String
+  servingId String?
+  serving   FoodServing? @relation(fields: [servingId], references: [id], onDelete: SetNull)
+  quantity  Float        @default(1)
+
+  foodNameSnapshot     String
+  brandNameSnapshot    String?
+  servingDescSnapshot  String?
+  caloriesSnapshot     Float
+  proteinSnapshot      Float
+  carbsSnapshot        Float
+  fatSnapshot          Float
+  fiberSnapshot        Float?
+  sugarSnapshot        Float?
+  sodiumSnapshot       Float?
+  saturatedFatSnapshot Float?
+  addedSugarsSnapshot  Float?
+
+  createdAt DateTime @default(now())
 
   @@index([userId, date])
+}
+
+model Food {
+  id              String        @id @default(cuid())
+  source          String
+  fatSecretFoodId Int?          @unique
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  brandName       String?
+  foodType        String
+  foodUrl         String?
+  createdAt       DateTime      @default(now())
+  servings        FoodServing[]
+
+  // Postgres treats NULL userIds as distinct, so multiple source='fatsecret'
+  // rows (userId=null) can share a name. FS rows dedupe via fatSecretFoodId.
+  // Custom rows (userId set) enforce per-user name uniqueness.
+  @@unique([userId, name])
+  @@index([source])
+  @@index([userId])
+}
+
+model FoodServing {
+  id                     String           @id @default(cuid())
+  foodId                 String
+  food                   Food             @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  fatSecretServingId     Int?
+  description            String
+  metricAmount           Float?
+  metricUnit             String?
+  measurementDescription String?
+  numberOfUnits          Float?
+  isDefault              Boolean          @default(false)
+  calories               Float
+  protein                Float
+  carbs                  Float
+  fat                    Float
+  saturatedFat           Float?
+  sugar                  Float?
+  addedSugars            Float?
+  fiber                  Float?
+  sodium                 Float?
+  createdAt              DateTime         @default(now())
+  mealEntries            MealEntry[]
+  presetItems            MealPresetItem[]
+
+  @@unique([foodId, fatSecretServingId])
+  @@index([foodId])
 }
 
 model WorkoutSession {
@@ -98,20 +157,6 @@ model HealthData {
   createdAt       DateTime @default(now())
 
   @@unique([userId, date])
-}
-
-model CustomFood {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  calories  Float
-  protein   Float
-  carbs     Float
-  fat       Float
-  createdAt DateTime @default(now())
-
-  @@unique([userId, name])
 }
 
 model MealPreset {
@@ -149,15 +194,16 @@ model WorkoutPreset {
 }
 
 model MealPresetItem {
-  id        String     @id @default(cuid())
-  presetId  String
-  preset    MealPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
-  foodName  String
-  calories  Float
-  protein   Float
-  carbs     Float
-  fat       Float
-  servings  Float      @default(1)
+  id                  String      @id @default(cuid())
+  presetId            String
+  preset              MealPreset  @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  servingId           String
+  serving             FoodServing @relation(fields: [servingId], references: [id], onDelete: Cascade)
+  quantity            Float       @default(1)
+  foodNameSnapshot    String
+  servingDescSnapshot String?
+
+  @@index([presetId])
 }
 
 model WaterEntry {

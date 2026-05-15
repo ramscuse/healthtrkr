@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
-import { getMeals, searchFood, addMeal, deleteMeal,
-         getCustomFoods, createCustomFood, deleteCustomFood,
+import { getMeals, searchFood, getFoodDetail, addMeal, deleteMeal,
+         getCustomFoods, createCustomFood, updateCustomFood, deleteCustomFood,
          getPresets, createPreset, updatePreset, deletePreset, logPreset,
          getGoals, updateGoals } from '../lib/api.js'
 
@@ -15,13 +15,27 @@ function getTodayString() {
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 
-const EMPTY_FORM = {
-  foodName: '',
+const EMPTY_CUSTOM_SERVING = {
+  description: '1 serving',
+  metricAmount: '',
+  metricUnit: '',
   calories: '',
   protein: '',
   carbs: '',
   fat: '',
-  servings: 1,
+  fiber: '',
+  sugar: '',
+  sodium: '',
+  saturatedFat: '',
+  addedSugars: '',
+  isDefault: true,
+}
+
+const EMPTY_CUSTOM_FOOD = {
+  id: null,
+  name: '',
+  brandName: '',
+  servings: [{ ...EMPTY_CUSTOM_SERVING }],
 }
 
 function TrashIcon({ className = 'w-4 h-4' }) {
@@ -61,44 +75,118 @@ function PencilIcon({ className = 'w-4 h-4' }) {
   )
 }
 
+function defaultServingIdx(servings) {
+  if (!Array.isArray(servings) || servings.length === 0) return 0
+  const i = servings.findIndex(s => s.isDefault)
+  return i >= 0 ? i : 0
+}
+
+// Build the food/serving payload used by POST /api/meals. For FatSecret foods
+// the client only sends the FS ids — the server fetches the canonical
+// nutrition data from FatSecret to avoid trusting client-supplied macros.
+function buildLogPayload(chosen, servingIdx, quantity) {
+  const serving = chosen.servings[servingIdx]
+  if (chosen.source === 'custom') {
+    return {
+      food:    { source: 'custom' },
+      serving: { source: 'custom', servingId: serving.id },
+      quantity,
+    }
+  }
+  return {
+    food:    { source: 'fatsecret', fatSecretFoodId: chosen.fatSecretFoodId },
+    serving: { source: 'fatsecret', fatSecretServingId: serving.fatSecretServingId ?? serving.servingId },
+    quantity,
+  }
+}
+
+// Convert a FatSecret search result into our "chosen food" shape (source='fatsecret').
+function fsFoodToChosen(f) {
+  return {
+    source: 'fatsecret',
+    fatSecretFoodId: f.foodId,
+    foodName: f.foodName,
+    brandName: f.brandName,
+    foodType: f.foodType,
+    foodUrl: f.foodUrl,
+    servings: f.servings.map(s => ({
+      ...s,
+      fatSecretServingId: s.servingId,
+    })),
+  }
+}
+
+// Convert a custom food (from GET /custom-foods) into "chosen food" shape (source='custom').
+function customFoodToChosen(f) {
+  return {
+    source: 'custom',
+    customFoodId: f.id,
+    foodName: f.name,
+    brandName: f.brandName,
+    foodType: f.foodType,
+    servings: f.servings,
+  }
+}
+
+function fmt(v, suffix = '') {
+  if (v == null || !Number.isFinite(v)) return ''
+  // Show one decimal for small numbers so e.g. 0.7g doesn't round to "1"
+  const shown = Math.abs(v) < 10 ? Math.round(v * 10) / 10 : Math.round(v)
+  return `${shown}${suffix}`
+}
+
 export default function Meals() {
   const today = getTodayString()
   const location = useLocation()
 
-  // Existing state
+  // Page state
   const [date, setDate] = useState(today)
   const [meals, setMeals] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [deletingId, setDeletingId] = useState(null)
+  const [saveAsMeal, setSaveAsMeal] = useState(null) // { mealType, name, saving, error } | null
+
+  // Slide-over state
   const [slideOver, setSlideOver] = useState({ open: false, mealType: 'breakfast' })
   const [panelMode, setPanelMode] = useState('search')
+
+  // Search panel state
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
   const debounceRef = useRef(null)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [baseNutrients, setBaseNutrients] = useState(null)
+
+  // Log panel state — chosen food/serving + quantity
+  const [chosenFood, setChosenFood] = useState(null) // {source, foodName, brandName, servings:[...]}
+  const [chosenServingIdx, setChosenServingIdx] = useState(0)
+  const [quantity, setQuantity] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
-  const [deletingId, setDeletingId] = useState(null)
 
-  // New state
+  // Custom foods + custom-food editor state
   const [customFoods, setCustomFoods] = useState([])
-  const [presets, setPresets] = useState([])
+  const [customFoodForm, setCustomFoodForm] = useState(EMPTY_CUSTOM_FOOD)
+  const [customFoodError, setCustomFoodError] = useState('')
   const [savingCustomFood, setSavingCustomFood] = useState(false)
-  const [customFoodSaved, setCustomFoodSaved] = useState(false)
   const [deletingCustomFoodId, setDeletingCustomFoodId] = useState(null)
+  const [customFoodAdvancedOpen, setCustomFoodAdvancedOpen] = useState({}) // { [servingIdx]: bool }
+
+  // Preset state
+  const [presets, setPresets] = useState([])
   const [loggingPresetId, setLoggingPresetId] = useState(null)
   const [deletingPresetId, setDeletingPresetId] = useState(null)
-  const [newPreset, setNewPreset] = useState({ name: '', items: [] })
+  const [presetForm, setPresetForm] = useState({ id: null, name: '', items: [] })
   const [presetSearchQuery, setPresetSearchQuery] = useState('')
   const [presetSearchResults, setPresetSearchResults] = useState([])
   const [presetSearchLoading, setPresetSearchLoading] = useState(false)
   const presetDebounceRef = useRef(null)
+  const [presetPickFood, setPresetPickFood] = useState(null)   // chosen food while picking
+  const [presetPickServingIdx, setPresetPickServingIdx] = useState(0)
+  const [presetPickQuantity, setPresetPickQuantity] = useState(1)
   const [savingPreset, setSavingPreset] = useState(false)
   const [presetError, setPresetError] = useState('')
-  const [editingPreset, setEditingPreset] = useState(null) // { id } | null
-  const [saveAsMeal, setSaveAsMeal] = useState(null) // { mealType, name, saving, error } | null
 
   // Goals state
   const [goals, setGoals]               = useState(null)
@@ -107,7 +195,7 @@ export default function Meals() {
   const [goalsSaving, setGoalsSaving]   = useState(false)
   const [goalsError, setGoalsError]     = useState('')
 
-  // Load meals
+  // ─── Loaders ─────────────────────────────────────────────────────────────
   const loadMeals = useCallback(async (dateStr) => {
     setLoading(true)
     setError('')
@@ -121,9 +209,7 @@ export default function Meals() {
     }
   }, [])
 
-  useEffect(() => {
-    loadMeals(date)
-  }, [date, loadMeals])
+  useEffect(() => { loadMeals(date) }, [date, loadMeals])
 
   useEffect(() => {
     getGoals().then(g => {
@@ -139,17 +225,15 @@ export default function Meals() {
     }).catch(() => {})
   }, [])
 
-  // Auto-open slide-over when navigated from Dashboard Quick Add
   useEffect(() => {
     const openFor = location.state?.openFor
     if (openFor && MEAL_TYPES.includes(openFor) && !loading) {
       openSlideOver(openFor)
-      // Clear the state so re-renders don't re-open
       window.history.replaceState({}, '')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // Load custom foods and presets
   const loadUserFoods = useCallback(async () => {
     try {
       const [foods, presetList] = await Promise.all([getCustomFoods(), getPresets()])
@@ -158,42 +242,25 @@ export default function Meals() {
     } catch { /* non-critical */ }
   }, [])
 
-  async function handleSaveMealAsPreset(items) {
-    const name = saveAsMeal.name.trim()
-    if (!name || !items.length) return
-    setSaveAsMeal(prev => ({ ...prev, saving: true, error: '' }))
-    try {
-      const presetItems = items.map(item => {
-        const servings = item.servingSize || 1
-        return {
-          foodName: item.foodName,
-          calories: item.calories / servings,
-          protein:  item.protein  / servings,
-          carbs:    item.carbs    / servings,
-          fat:      item.fat      / servings,
-          servings,
-        }
-      })
-      await createPreset({ name, items: presetItems })
-      setSaveAsMeal(null)
-      loadUserFoods()
-    } catch (err) {
-      setSaveAsMeal(prev => ({ ...prev, saving: false, error: err.message || 'Failed to save preset.' }))
-    }
-  }
-
+  // ─── Slide-over open/close ──────────────────────────────────────────────
   function resetPanelState() {
     setSearchQuery('')
     setSearchResults([])
-    setForm(EMPTY_FORM)
-    setBaseNutrients(null)
+    setSearchError('')
+    setChosenFood(null)
+    setChosenServingIdx(0)
+    setQuantity(1)
     setSubmitError('')
-    setCustomFoodSaved(false)
-    setNewPreset({ name: '', items: [] })
+    setCustomFoodForm(EMPTY_CUSTOM_FOOD)
+    setCustomFoodError('')
+    setCustomFoodAdvancedOpen({})
+    setPresetForm({ id: null, name: '', items: [] })
     setPresetSearchQuery('')
     setPresetSearchResults([])
+    setPresetPickFood(null)
+    setPresetPickServingIdx(0)
+    setPresetPickQuantity(1)
     setPresetError('')
-    setEditingPreset(null)
   }
 
   function openSlideOver(mealType, initialMode = 'search') {
@@ -209,7 +276,7 @@ export default function Meals() {
     resetPanelState()
   }
 
-  // Search in food-add panel
+  // ─── Search ─────────────────────────────────────────────────────────────
   function handleSearchInput(e) {
     const q = e.target.value
     setSearchQuery(q)
@@ -218,72 +285,61 @@ export default function Meals() {
     debounceRef.current = setTimeout(async () => {
       if (q.trim().length < 2) { setSearchResults([]); return }
       setSearchLoading(true)
+      setSearchError('')
       try {
-        const results = await searchFood(q)
-        setSearchResults(results?.products || [])
+        const data = await searchFood(q)
+        setSearchResults(data?.foods || [])
       } catch (err) {
         setSearchResults([])
-        if (err.message?.includes('rate limit')) setSubmitError(err.message)
+        setSearchError(err.message || 'Search failed.')
       } finally {
         setSearchLoading(false)
       }
     }, 700)
   }
 
-  function selectSearchResult(result) {
-    const base = {
-      calories: result.calories ?? 0,
-      protein: result.protein ?? 0,
-      carbs: result.carbs ?? 0,
-      fat: result.fat ?? 0,
-    }
-    setBaseNutrients(base)
-    setForm({
-      foodName: result.name || result.foodName || '',
-      calories: String(base.calories),
-      protein: String(base.protein),
-      carbs: String(base.carbs),
-      fat: String(base.fat),
-      servings: 1,
-    })
-    setPanelMode('manual')
+  // Click a search result. Custom foods already include their servings inline;
+  // FatSecret search hits are lightweight and need a separate food.get fetch
+  // to materialize the full servings array.
+  async function pickFoodForLog(food) {
     setSubmitError('')
-    setCustomFoodSaved(false)
-  }
-
-  function handleFormChange(e) {
-    const { name, value } = e.target
-    if (name === 'servings' && baseNutrients) {
-      const n = Math.max(0, parseFloat(value) || 0)
-      setForm(prev => ({
-        ...prev,
-        servings: value,
-        calories: String(Math.round(baseNutrients.calories * n)),
-        protein: String(Math.round(baseNutrients.protein * n * 10) / 10),
-        carbs: String(Math.round(baseNutrients.carbs * n * 10) / 10),
-        fat: String(Math.round(baseNutrients.fat * n * 10) / 10),
-      }))
+    if (food.source === 'fatsecret' && (!food.servings || food.servings.length === 0)) {
+      try {
+        const detail = await getFoodDetail(food.fatSecretFoodId)
+        if (!detail) throw new Error('Could not load food details.')
+        const chosen = fsFoodToChosen(detail)
+        setChosenFood(chosen)
+        setChosenServingIdx(defaultServingIdx(chosen.servings))
+      } catch (err) {
+        setSearchError(err.message || 'Failed to load food details.')
+        return
+      }
     } else {
-      setForm(prev => ({ ...prev, [name]: value }))
+      setChosenFood(food)
+      setChosenServingIdx(defaultServingIdx(food.servings))
     }
+    setQuantity(1)
+    setPanelMode('log')
   }
 
-  async function handleFormSubmit(e) {
+  // ─── Log a meal ─────────────────────────────────────────────────────────
+  async function handleLogSubmit(e) {
     e.preventDefault()
+    if (!chosenFood) return
+    const q = Number(quantity)
+    if (!Number.isFinite(q) || q <= 0) {
+      setSubmitError('Quantity must be a positive number.')
+      return
+    }
     setSubmitting(true)
     setSubmitError('')
     try {
-      await addMeal({
+      const payload = {
         date,
         mealType: slideOver.mealType,
-        foodName: form.foodName,
-        calories: Number(form.calories),
-        protein: Number(form.protein),
-        carbs: Number(form.carbs),
-        fat: Number(form.fat),
-        servingSize: Number(form.servings) || 1,
-        servingUnit: 'serving',
-      })
+        ...buildLogPayload(chosenFood, chosenServingIdx, q),
+      }
+      await addMeal(payload)
       closeSlideOver()
       await loadMeals(date)
     } catch (err) {
@@ -293,6 +349,7 @@ export default function Meals() {
     }
   }
 
+  // ─── Delete a meal entry ────────────────────────────────────────────────
   async function handleDelete(id) {
     setDeletingId(id)
     try {
@@ -305,27 +362,112 @@ export default function Meals() {
     }
   }
 
-  // Save to My Foods
+  // ─── Custom-food editor ─────────────────────────────────────────────────
+  function openCustomFoodEditor(existing = null) {
+    if (existing) {
+      setCustomFoodForm({
+        id: existing.id,
+        name: existing.name,
+        brandName: existing.brandName ?? '',
+        servings: existing.servings.map(s => ({
+          description:  s.description ?? '',
+          metricAmount: s.metricAmount ?? '',
+          metricUnit:   s.metricUnit ?? '',
+          calories:     s.calories ?? '',
+          protein:      s.protein ?? '',
+          carbs:        s.carbs ?? '',
+          fat:          s.fat ?? '',
+          fiber:        s.fiber ?? '',
+          sugar:        s.sugar ?? '',
+          sodium:       s.sodium ?? '',
+          saturatedFat: s.saturatedFat ?? '',
+          addedSugars:  s.addedSugars ?? '',
+          isDefault:    s.isDefault ?? false,
+        })),
+      })
+    } else {
+      setCustomFoodForm({ ...EMPTY_CUSTOM_FOOD, servings: [{ ...EMPTY_CUSTOM_SERVING }] })
+    }
+    setCustomFoodError('')
+    setCustomFoodAdvancedOpen({})
+    setPanelMode('custom-food')
+  }
+
+  function updateCustomFoodField(field, value) {
+    setCustomFoodForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  function updateCustomServingField(idx, field, value) {
+    setCustomFoodForm(prev => {
+      const servings = prev.servings.map((s, i) => i === idx ? { ...s, [field]: value } : s)
+      return { ...prev, servings }
+    })
+  }
+
+  function setCustomDefaultServing(idx) {
+    setCustomFoodForm(prev => ({
+      ...prev,
+      servings: prev.servings.map((s, i) => ({ ...s, isDefault: i === idx })),
+    }))
+  }
+
+  function addCustomServing() {
+    setCustomFoodForm(prev => ({
+      ...prev,
+      servings: [...prev.servings, { ...EMPTY_CUSTOM_SERVING, isDefault: false }],
+    }))
+  }
+
+  function removeCustomServing(idx) {
+    setCustomFoodForm(prev => {
+      if (prev.servings.length <= 1) return prev
+      const servings = prev.servings.filter((_, i) => i !== idx)
+      if (!servings.some(s => s.isDefault)) servings[0].isDefault = true
+      return { ...prev, servings }
+    })
+  }
+
+  function buildCustomFoodPayload() {
+    return {
+      name: customFoodForm.name.trim(),
+      brandName: customFoodForm.brandName.trim() || null,
+      servings: customFoodForm.servings.map(s => ({
+        description: s.description.trim(),
+        metricAmount: s.metricAmount === '' ? null : Number(s.metricAmount),
+        metricUnit:   s.metricUnit.trim() || null,
+        isDefault:    s.isDefault === true,
+        calories: Number(s.calories) || 0,
+        protein:  Number(s.protein)  || 0,
+        carbs:    Number(s.carbs)    || 0,
+        fat:      Number(s.fat)      || 0,
+        fiber:        s.fiber        === '' ? null : Number(s.fiber),
+        sugar:        s.sugar        === '' ? null : Number(s.sugar),
+        sodium:       s.sodium       === '' ? null : Number(s.sodium),
+        saturatedFat: s.saturatedFat === '' ? null : Number(s.saturatedFat),
+        addedSugars:  s.addedSugars  === '' ? null : Number(s.addedSugars),
+      })),
+    }
+  }
+
   async function handleSaveCustomFood() {
-    if (!form.foodName) return
+    if (!customFoodForm.name.trim()) { setCustomFoodError('Name is required.'); return }
+    if (customFoodForm.servings.length === 0) { setCustomFoodError('Add at least one serving.'); return }
+    for (const [i, s] of customFoodForm.servings.entries()) {
+      if (!s.description.trim()) { setCustomFoodError(`Serving ${i + 1}: description is required.`); return }
+    }
     setSavingCustomFood(true)
+    setCustomFoodError('')
     try {
-      const payload = {
-        name: form.foodName,
-        calories: baseNutrients ? baseNutrients.calories : Number(form.calories),
-        protein:  baseNutrients ? baseNutrients.protein  : Number(form.protein),
-        carbs:    baseNutrients ? baseNutrients.carbs    : Number(form.carbs),
-        fat:      baseNutrients ? baseNutrients.fat      : Number(form.fat),
+      const payload = buildCustomFoodPayload()
+      if (customFoodForm.id) {
+        await updateCustomFood(customFoodForm.id, payload)
+      } else {
+        await createCustomFood(payload)
       }
-      await createCustomFood(payload)
-      setCustomFoodSaved(true)
       await loadUserFoods()
-      setTimeout(() => setCustomFoodSaved(false), 2000)
+      setPanelMode('search')
     } catch (err) {
-      if (err.message?.includes('already exists')) {
-        setCustomFoodSaved(true)
-        setTimeout(() => setCustomFoodSaved(false), 2000)
-      }
+      setCustomFoodError(err.message || 'Failed to save custom food.')
     } finally {
       setSavingCustomFood(false)
     }
@@ -336,12 +478,14 @@ export default function Meals() {
     try {
       await deleteCustomFood(id)
       setCustomFoods(prev => prev.filter(f => f.id !== id))
-    } catch { /* silent */ } finally {
+    } catch (err) {
+      setSearchError(err.message || 'Could not delete food.')
+    } finally {
       setDeletingCustomFoodId(null)
     }
   }
 
-  // Preset logging
+  // ─── Preset list actions ────────────────────────────────────────────────
   async function handleLogPreset(presetId) {
     setLoggingPresetId(presetId)
     try {
@@ -360,23 +504,49 @@ export default function Meals() {
     try {
       await deletePreset(id)
       setPresets(prev => prev.filter(p => p.id !== id))
-    } catch { /* silent */ } finally {
+    } catch (err) {
+      setPresetError(err.message || 'Could not delete preset.')
+    } finally {
       setDeletingPresetId(null)
     }
   }
 
-  // New preset food search
+  // ─── Preset editor ──────────────────────────────────────────────────────
+  function openPresetEditor(existing = null) {
+    if (existing) {
+      setPresetForm({
+        id: existing.id,
+        name: existing.name,
+        items: existing.items.map(it => ({
+          servingId: it.servingId,
+          quantity: it.quantity,
+          foodName: it.foodName,
+          servingDesc: it.servingDesc,
+          caloriesPerServing: it.serving?.calories ?? 0,
+        })),
+      })
+    } else {
+      setPresetForm({ id: null, name: '', items: [] })
+    }
+    setPresetSearchQuery('')
+    setPresetSearchResults([])
+    setPresetPickFood(null)
+    setPresetError('')
+    setPanelMode('new-preset')
+  }
+
   function handlePresetSearchInput(e) {
     const q = e.target.value
     setPresetSearchQuery(q)
+    setPresetPickFood(null)
     if (presetDebounceRef.current) clearTimeout(presetDebounceRef.current)
     if (!q.trim()) { setPresetSearchResults([]); return }
     presetDebounceRef.current = setTimeout(async () => {
       if (q.trim().length < 2) { setPresetSearchResults([]); return }
       setPresetSearchLoading(true)
       try {
-        const results = await searchFood(q)
-        setPresetSearchResults(results?.products || [])
+        const data = await searchFood(q)
+        setPresetSearchResults(data?.foods || [])
       } catch {
         setPresetSearchResults([])
       } finally {
@@ -385,51 +555,76 @@ export default function Meals() {
     }, 500)
   }
 
-  function addFoodToPreset(food) {
-    setNewPreset(prev => {
-      const existing = prev.items.findIndex(i => i.foodName === (food.name || food.foodName))
-      if (existing >= 0) {
-        const updated = [...prev.items]
-        updated[existing] = { ...updated[existing], servings: updated[existing].servings + 1 }
-        return { ...prev, items: updated }
-      }
-      return {
-        ...prev,
-        items: [...prev.items, {
-          foodName: food.name || food.foodName,
-          calories: food.calories ?? 0,
-          protein: food.protein ?? 0,
-          carbs: food.carbs ?? 0,
-          fat: food.fat ?? 0,
-          servings: 1,
-        }],
-      }
+  function pickFoodForPreset(food) {
+    setPresetPickFood(food)
+    setPresetPickServingIdx(defaultServingIdx(food.servings))
+    setPresetPickQuantity(1)
+  }
+
+  function addPickedFoodToPreset() {
+    if (!presetPickFood) return
+    const serving = presetPickFood.servings[presetPickServingIdx]
+    if (!serving) return
+    if (presetPickFood.source !== 'custom') {
+      // FS picks need to be persisted to our DB so the preset can reference a real servingId.
+      // We'll materialize at preset-save time via a placeholder + materialize step? Simpler:
+      // require the user to log it once OR add an inline "save first" path. For now,
+      // disallow adding FS foods directly — they must be saved to My Foods first.
+      setPresetError('FatSecret foods must be saved to My Foods before they can be added to a preset.')
+      return
+    }
+    setPresetError('')
+    setPresetForm(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          servingId: serving.id,
+          quantity: presetPickQuantity,
+          foodName: presetPickFood.foodName,
+          servingDesc: serving.description,
+          caloriesPerServing: serving.calories ?? 0,
+        },
+      ],
+    }))
+    setPresetPickFood(null)
+    setPresetPickServingIdx(0)
+    setPresetPickQuantity(1)
+    setPresetSearchQuery('')
+    setPresetSearchResults([])
+  }
+
+  function updatePresetItemQuantity(idx, value) {
+    setPresetForm(prev => {
+      const items = prev.items.map((it, i) => i === idx
+        ? { ...it, quantity: Math.max(0.25, parseFloat(value) || 0.25) }
+        : it)
+      return { ...prev, items }
     })
   }
 
-  function updatePresetItemServings(index, value) {
-    setNewPreset(prev => {
-      const updated = [...prev.items]
-      updated[index] = { ...updated[index], servings: Math.max(0.25, parseFloat(value) || 0.25) }
-      return { ...prev, items: updated }
-    })
-  }
-
-  function removePresetItem(index) {
-    setNewPreset(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }))
+  function removePresetItem(idx) {
+    setPresetForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }))
   }
 
   async function handleSavePreset() {
-    if (!newPreset.name.trim() || newPreset.items.length === 0) return
+    const name = presetForm.name.trim()
+    if (!name) { setPresetError('Preset name is required.'); return }
+    if (presetForm.items.length === 0) { setPresetError('Add at least one item.'); return }
     setSavingPreset(true)
     setPresetError('')
     try {
-      await createPreset({ name: newPreset.name.trim(), items: newPreset.items })
+      const payload = {
+        name,
+        items: presetForm.items.map(it => ({ servingId: it.servingId, quantity: it.quantity })),
+      }
+      if (presetForm.id) {
+        await updatePreset(presetForm.id, payload)
+      } else {
+        await createPreset(payload)
+      }
       await loadUserFoods()
       setPanelMode('presets')
-      setNewPreset({ name: '', items: [] })
-      setPresetSearchQuery('')
-      setPresetSearchResults([])
     } catch (err) {
       setPresetError(err.message || 'Failed to save preset.')
     } finally {
@@ -437,41 +632,27 @@ export default function Meals() {
     }
   }
 
-  function openEditPreset(preset) {
-    setEditingPreset({ id: preset.id })
-    setNewPreset({
-      name: preset.name,
-      items: preset.items.map(item => ({
-        foodName: item.foodName,
-        calories: item.calories,
-        protein:  item.protein,
-        carbs:    item.carbs,
-        fat:      item.fat,
-        servings: item.servings,
-      })),
-    })
-    setPresetSearchQuery('')
-    setPresetSearchResults([])
-    setPresetError('')
-    setPanelMode('new-preset')
-  }
-
-  async function handleUpdatePreset() {
-    if (!newPreset.name.trim() || newPreset.items.length === 0) return
-    setSavingPreset(true)
-    setPresetError('')
+  // ─── Save current meal section as a preset ──────────────────────────────
+  async function handleSaveMealAsPreset(items) {
+    const name = saveAsMeal.name.trim()
+    if (!name || !items.length) return
+    setSaveAsMeal(prev => ({ ...prev, saving: true, error: '' }))
     try {
-      const updated = await updatePreset(editingPreset.id, { name: newPreset.name, items: newPreset.items })
-      setPresets(prev => prev.map(p => p.id === editingPreset.id ? updated : p))
-      setEditingPreset(null)
-      setNewPreset({ name: '', items: [] })
-      setPresetSearchQuery('')
-      setPresetSearchResults([])
-      setPanelMode('presets')
+      const valid = items.filter(it => it.servingId)
+      const dropped = items.length - valid.length
+      if (valid.length === 0) throw new Error('No items reference a saved food — cannot save as preset.')
+      const payload = {
+        name,
+        items: valid.map(it => ({ servingId: it.servingId, quantity: it.quantity ?? 1 })),
+      }
+      await createPreset(payload)
+      setSaveAsMeal(null)
+      await loadUserFoods()
+      if (dropped > 0) {
+        setError(`Saved preset, but ${dropped} item${dropped === 1 ? '' : 's'} could not be included (their food was deleted).`)
+      }
     } catch (err) {
-      setPresetError(err.message || 'Failed to update preset.')
-    } finally {
-      setSavingPreset(false)
+      setSaveAsMeal(prev => ({ ...prev, saving: false, error: err.message || 'Failed to save preset.' }))
     }
   }
 
@@ -498,7 +679,7 @@ export default function Meals() {
 
   const totals = meals?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 }
 
-  // Panel content renderers
+  // ─── Panel renderers ────────────────────────────────────────────────────
   function renderSearchPanel() {
     return (
       <>
@@ -518,39 +699,55 @@ export default function Meals() {
           <p className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">Searching...</p>
         )}
 
+        {searchError && (
+          <p className="text-xs text-red-600">{searchError}</p>
+        )}
+
         {!searchLoading && searchResults.length > 0 && (
           <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-            {searchResults.map((result, idx) => (
-              <li key={result.id || idx}>
-                <button
-                  type="button"
-                  onClick={() => selectSearchResult(result)}
-                  className="w-full text-left px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
-                >
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{result.name || result.foodName}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    {result.calories != null ? `${Math.round(result.calories)} kcal` : ''}
-                    {result.protein != null ? ` · ${Math.round(result.protein)}g protein` : ''}
-                  </p>
-                </button>
-              </li>
-            ))}
+            {searchResults.map((food) => {
+              const p = food.defaultPreview
+              return (
+                <li key={food.foodId}>
+                  <button
+                    type="button"
+                    onClick={() => pickFoodForLog({
+                      source: 'fatsecret',
+                      fatSecretFoodId: food.foodId,
+                      foodName: food.foodName,
+                      brandName: food.brandName,
+                      foodType: food.foodType,
+                      foodUrl: food.foodUrl,
+                      servings: [],
+                    })}
+                    className="w-full text-left px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                  >
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {food.foodName}
+                      {food.brandName ? <span className="text-gray-400 dark:text-gray-500"> · {food.brandName}</span> : null}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {p ? `Per ${p.description} · ${fmt(p.calories)} kcal · ${fmt(p.protein, 'g')} protein` : 'Tap to load servings'}
+                    </p>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
 
-        {!searchLoading && searchQuery.trim() && searchResults.length === 0 && (
+        {!searchLoading && searchQuery.trim() && searchResults.length === 0 && !searchError && (
           <p className="text-xs text-gray-400 dark:text-gray-500">No results found.</p>
         )}
 
         <button
           type="button"
-          onClick={() => { setPanelMode('manual'); setForm(EMPTY_FORM); setBaseNutrients(null); setSubmitError('') }}
+          onClick={() => openCustomFoodEditor(null)}
           className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
         >
-          Enter manually
+          + Create custom food
         </button>
 
-        {/* My Foods section */}
         <hr className="border-gray-200 dark:border-gray-700" />
 
         <div>
@@ -559,40 +756,45 @@ export default function Meals() {
             <p className="text-xs text-gray-400 dark:text-gray-500">No saved foods yet.</p>
           ) : (
             <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-              {customFoods.map(food => (
-                <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => selectSearchResult({ name: food.name, calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat })}
-                    className="flex-1 min-w-0 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded px-1 py-0.5 transition-colors"
-                  >
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {Math.round(food.calories)} kcal &middot; {Math.round(food.protein)}g protein
-                    </p>
-                  </button>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+              {customFoods.map(food => {
+                const d = food.servings[defaultServingIdx(food.servings)]
+                return (
+                  <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2">
                     <button
                       type="button"
-                      onClick={() => selectSearchResult({ name: food.name, calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat })}
-                      className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 px-2 py-1 rounded border border-indigo-200 hover:border-indigo-300 transition-colors"
+                      onClick={() => pickFoodForLog(customFoodToChosen(food))}
+                      className="flex-1 min-w-0 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded px-1 py-0.5 transition-colors"
                     >
-                      Add
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {d ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, 'g')} protein` : ''}
+                        {food.servings.length > 1 ? ` · ${food.servings.length} servings` : ''}
+                      </p>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCustomFood(food.id)}
-                      disabled={deletingCustomFoodId === food.id}
-                      aria-label={`Delete ${food.name}`}
-                      className="w-7 h-7 flex items-center justify-center rounded-md text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
-                    >
-                      {deletingCustomFoodId === food.id
-                        ? <Spinner className="w-3 h-3 border-2 border-red-400 border-t-transparent" />
-                        : <TrashIcon />}
-                    </button>
-                  </div>
-                </li>
-              ))}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openCustomFoodEditor(food)}
+                        aria-label={`Edit ${food.name}`}
+                        className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                      >
+                        <PencilIcon />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCustomFood(food.id)}
+                        disabled={deletingCustomFoodId === food.id}
+                        aria-label={`Delete ${food.name}`}
+                        className="w-7 h-7 flex items-center justify-center rounded-md text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                      >
+                        {deletingCustomFoodId === food.id
+                          ? <Spinner className="w-3 h-3 border-2 border-red-400 border-t-transparent" />
+                          : <TrashIcon />}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
@@ -600,133 +802,82 @@ export default function Meals() {
     )
   }
 
-  function renderManualPanel() {
+  function renderLogPanel() {
+    if (!chosenFood) return null
+    const serving = chosenFood.servings[chosenServingIdx]
+    const q = Number(quantity) || 0
+    const preview = {
+      calories: (serving?.calories ?? 0) * q,
+      protein:  (serving?.protein  ?? 0) * q,
+      carbs:    (serving?.carbs    ?? 0) * q,
+      fat:      (serving?.fat      ?? 0) * q,
+    }
     return (
-      <form onSubmit={handleFormSubmit} className="space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 dark:text-gray-400">Meal:</span>
-          <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 capitalize">{slideOver.mealType}</span>
+      <form onSubmit={handleLogSubmit} className="space-y-4">
+        <div>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+            {chosenFood.foodName}
+            {chosenFood.brandName ? <span className="text-gray-400 dark:text-gray-500 font-normal"> · {chosenFood.brandName}</span> : null}
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+            {chosenFood.source === 'custom' ? 'My Food' : 'FatSecret'}
+          </p>
         </div>
+
+        {chosenFood.servings.length > 1 ? (
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Serving</label>
+            <select
+              value={chosenServingIdx}
+              onChange={e => setChosenServingIdx(Number(e.target.value))}
+              style={{ fontSize: '16px' }}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+            >
+              {chosenFood.servings.map((s, i) => (
+                <option key={s.id ?? s.fatSecretServingId ?? i} value={i}>
+                  {s.description} — {fmt(s.calories)} kcal
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 dark:text-gray-400">{serving?.description}</p>
+        )}
 
         <div>
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-            Food Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            name="foodName"
-            value={form.foodName}
-            onChange={handleFormChange}
-            required
-            style={{ fontSize: '16px' }}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-              Calories <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              name="calories"
-              value={form.calories}
-              onChange={handleFormChange}
-              required
-              min="0"
-              step="1"
-              inputMode="numeric"
-              style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-              Protein (g) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              name="protein"
-              value={form.protein}
-              onChange={handleFormChange}
-              required
-              min="0"
-              step="0.1"
-              inputMode="decimal"
-              style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-              Carbs (g) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              name="carbs"
-              value={form.carbs}
-              onChange={handleFormChange}
-              required
-              min="0"
-              step="0.1"
-              inputMode="decimal"
-              style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-              Fat (g) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              name="fat"
-              value={form.fat}
-              onChange={handleFormChange}
-              required
-              min="0"
-              step="0.1"
-              inputMode="decimal"
-              style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Servings</label>
+          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Quantity</label>
           <input
             type="number"
-            name="servings"
-            value={form.servings}
-            onChange={handleFormChange}
+            value={quantity}
+            onChange={e => setQuantity(e.target.value)}
             min="0.25"
             step="0.25"
             inputMode="decimal"
             style={{ fontSize: '16px' }}
             className="w-32 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
           />
-          {baseNutrients && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Macros update automatically as you change servings.</p>
-          )}
         </div>
 
-        {/* Save to My Foods */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSaveCustomFood}
-            disabled={savingCustomFood || !form.foodName}
-            className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 disabled:opacity-40 transition-colors border border-indigo-200 hover:border-indigo-300 rounded px-2 py-1"
-          >
-            {savingCustomFood ? 'Saving...' : customFoodSaved ? 'Saved!' : 'Save to My Foods'}
-          </button>
+        <div className="grid grid-cols-4 gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+          <div className="text-center">
+            <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(preview.calories)}</p>
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">kcal</p>
+          </div>
+          <div className="text-center">
+            <p className="text-base font-bold text-indigo-600 dark:text-indigo-400">{fmt(preview.protein, 'g')}</p>
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">protein</p>
+          </div>
+          <div className="text-center">
+            <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(preview.carbs, 'g')}</p>
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">carbs</p>
+          </div>
+          <div className="text-center">
+            <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(preview.fat, 'g')}</p>
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">fat</p>
+          </div>
         </div>
 
-        {submitError && (
-          <p className="text-xs text-red-600">{submitError}</p>
-        )}
+        {submitError && <p className="text-xs text-red-600">{submitError}</p>}
 
         <button
           type="submit"
@@ -747,6 +898,209 @@ export default function Meals() {
     )
   }
 
+  function renderCustomFoodPanel() {
+    const f = customFoodForm
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPanelMode('search')}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            aria-label="Back to search"
+          >
+            <BackIcon />
+          </button>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+            {f.id ? 'Edit Custom Food' : 'New Custom Food'}
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+              Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={f.name}
+              onChange={e => updateCustomFoodField('name', e.target.value)}
+              required
+              style={{ fontSize: '16px' }}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Brand (optional)</label>
+            <input
+              type="text"
+              value={f.brandName}
+              onChange={e => updateCustomFoodField('brandName', e.target.value)}
+              style={{ fontSize: '16px' }}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Servings</p>
+            <button
+              type="button"
+              onClick={addCustomServing}
+              className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
+            >
+              + Add another serving
+            </button>
+          </div>
+
+          {f.servings.map((s, idx) => (
+            <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3 bg-white dark:bg-gray-800">
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+                  <input
+                    type="radio"
+                    name="defaultServing"
+                    checked={s.isDefault}
+                    onChange={() => setCustomDefaultServing(idx)}
+                    className="accent-indigo-600"
+                  />
+                  Default
+                </label>
+                {f.servings.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeCustomServing(idx)}
+                    aria-label="Remove serving"
+                    className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
+                  >
+                    <CloseIcon className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={s.description}
+                  onChange={e => updateCustomServingField(idx, 'description', e.target.value)}
+                  placeholder="e.g. 1 scoop"
+                  style={{ fontSize: '16px' }}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Metric amount</label>
+                  <input
+                    type="number"
+                    value={s.metricAmount}
+                    onChange={e => updateCustomServingField(idx, 'metricAmount', e.target.value)}
+                    placeholder="e.g. 30"
+                    min="0"
+                    step="0.1"
+                    inputMode="decimal"
+                    style={{ fontSize: '16px' }}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Unit</label>
+                  <select
+                    value={s.metricUnit}
+                    onChange={e => updateCustomServingField(idx, 'metricUnit', e.target.value)}
+                    style={{ fontSize: '16px' }}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  >
+                    <option value="">—</option>
+                    <option value="g">g</option>
+                    <option value="ml">ml</option>
+                    <option value="oz">oz</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ['calories', 'Calories'],
+                  ['protein',  'Protein (g)'],
+                  ['carbs',    'Carbs (g)'],
+                  ['fat',      'Fat (g)'],
+                ].map(([key, label]) => (
+                  <div key={key}>
+                    <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">
+                      {label} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={s[key]}
+                      onChange={e => updateCustomServingField(idx, key, e.target.value)}
+                      required
+                      min="0"
+                      step="0.1"
+                      inputMode="decimal"
+                      style={{ fontSize: '16px' }}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCustomFoodAdvancedOpen(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
+              >
+                {customFoodAdvancedOpen[idx] ? 'Hide advanced nutrients' : 'Advanced nutrients (optional)'}
+              </button>
+
+              {customFoodAdvancedOpen[idx] && (
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ['fiber',         'Fiber (g)'],
+                    ['sugar',         'Sugar (g)'],
+                    ['addedSugars',   'Added sugars (g)'],
+                    ['saturatedFat',  'Sat. fat (g)'],
+                    ['sodium',        'Sodium (mg)'],
+                  ].map(([key, label]) => (
+                    <div key={key}>
+                      <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+                      <input
+                        type="number"
+                        value={s[key]}
+                        onChange={e => updateCustomServingField(idx, key, e.target.value)}
+                        min="0"
+                        step="0.1"
+                        inputMode="decimal"
+                        style={{ fontSize: '16px' }}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {customFoodError && <p className="text-xs text-red-600">{customFoodError}</p>}
+
+        <button
+          type="button"
+          onClick={handleSaveCustomFood}
+          disabled={savingCustomFood}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
+        >
+          {savingCustomFood ? 'Saving...' : f.id ? 'Save Changes' : 'Save Custom Food'}
+        </button>
+      </div>
+    )
+  }
+
   function renderPresetsPanel() {
     return (
       <div className="space-y-4">
@@ -754,16 +1108,14 @@ export default function Meals() {
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Meal Presets</h3>
           <button
             type="button"
-            onClick={() => { setPanelMode('new-preset'); setPresetError('') }}
+            onClick={() => openPresetEditor(null)}
             className="text-xs font-medium bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700 transition-colors"
           >
             + New Preset
           </button>
         </div>
 
-        {presetError && (
-          <p className="text-xs text-red-600">{presetError}</p>
-        )}
+        {presetError && <p className="text-xs text-red-600">{presetError}</p>}
 
         {presets.length === 0 ? (
           <div className="text-center py-8">
@@ -773,14 +1125,14 @@ export default function Meals() {
         ) : (
           <ul className="space-y-2">
             {presets.map(preset => {
-              const totalCal = preset.items.reduce((sum, item) => sum + item.calories * item.servings, 0)
+              const totalCal = preset.items.reduce((sum, it) => sum + ((it.serving?.calories ?? 0) * it.quantity), 0)
               return (
                 <li key={preset.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{preset.name}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        {preset.items.length} food{preset.items.length !== 1 ? 's' : ''} &middot; {Math.round(totalCal)} kcal
+                        {preset.items.length} item{preset.items.length !== 1 ? 's' : ''} · {fmt(totalCal)} kcal
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -794,7 +1146,7 @@ export default function Meals() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => openEditPreset(preset)}
+                        onClick={() => openPresetEditor(preset)}
                         aria-label={`Edit preset ${preset.name}`}
                         className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                       >
@@ -817,7 +1169,8 @@ export default function Meals() {
                     <ul className="space-y-0.5">
                       {preset.items.map(item => (
                         <li key={item.id} className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {item.servings !== 1 ? `${item.servings}x ` : ''}{item.foodName}
+                          {item.quantity !== 1 ? `${item.quantity}× ` : ''}{item.foodName}
+                          {item.servingDesc ? ` (${item.servingDesc})` : ''}
                         </li>
                       ))}
                     </ul>
@@ -832,42 +1185,44 @@ export default function Meals() {
   }
 
   function renderNewPresetPanel() {
-    const presetTotalCal = newPreset.items.reduce((sum, item) => sum + item.calories * item.servings, 0)
+    const totalCal = presetForm.items.reduce((sum, it) => sum + (it.caloriesPerServing * it.quantity), 0)
+    const pickServing = presetPickFood?.servings[presetPickServingIdx]
 
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { setEditingPreset(null); setPanelMode('presets'); setPresetError('') }}
+            onClick={() => { setPanelMode('presets'); setPresetError('') }}
             className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             aria-label="Back to presets"
           >
             <BackIcon />
           </button>
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-            {editingPreset ? 'Edit Preset' : 'New Preset'}
+            {presetForm.id ? 'Edit Preset' : 'New Preset'}
           </h3>
         </div>
 
-        {/* Preset name */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
             Preset Name <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
-            value={newPreset.name}
-            onChange={e => setNewPreset(prev => ({ ...prev, name: e.target.value }))}
+            value={presetForm.name}
+            onChange={e => setPresetForm(prev => ({ ...prev, name: e.target.value }))}
             placeholder="e.g. Morning Stack"
             style={{ fontSize: '16px' }}
             className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
         </div>
 
-        {/* Food search for preset */}
         <div>
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Add Food</label>
+          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Add Item</label>
+          <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-2">
+            Pick from My Foods (or search FatSecret — items must first be saved to My Foods to add to a preset).
+          </p>
           <input
             type="text"
             value={presetSearchQuery}
@@ -882,96 +1237,141 @@ export default function Meals() {
           <p className="text-xs text-gray-400 animate-pulse">Searching...</p>
         )}
 
-        {!presetSearchLoading && presetSearchResults.length > 0 && (
+        {!presetSearchLoading && !presetPickFood && presetSearchResults.length > 0 && (
           <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-            {presetSearchResults.map((result, idx) => (
-              <li key={result.id || idx} className="flex items-center justify-between px-3 py-2.5 gap-2 bg-white dark:bg-gray-800">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{result.name || result.foodName}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {result.calories != null ? `${Math.round(result.calories)} kcal` : ''}
-                    {result.protein != null ? ` · ${Math.round(result.protein)}g protein` : ''}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => addFoodToPreset(result)}
-                  className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-colors"
-                  aria-label={`Add ${result.name || result.foodName} to preset`}
-                >
-                  +
-                </button>
-              </li>
-            ))}
+            {presetSearchResults.map(food => {
+              const p = food.defaultPreview
+              return (
+                <li key={food.foodId} className="flex items-center justify-between px-3 py-2.5 gap-2 bg-white dark:bg-gray-800">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.foodName}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {p ? `Per ${p.description} · ${fmt(p.calories)} kcal · ${fmt(p.protein, 'g')} protein` : 'FatSecret food'}
+                    </p>
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">Save to My Foods first to add to a preset.</p>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         )}
 
-        {/* Also allow adding custom foods to preset */}
-        {customFoods.length > 0 && !presetSearchQuery.trim() && (
+        {!presetPickFood && !presetSearchQuery.trim() && customFoods.length > 0 && (
           <div>
             <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">My Foods</p>
             <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-              {customFoods.map(food => (
-                <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2 bg-white dark:bg-gray-800">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {Math.round(food.calories)} kcal &middot; {Math.round(food.protein)}g protein
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => addFoodToPreset({ name: food.name, calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat })}
-                    className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-colors"
-                    aria-label={`Add ${food.name} to preset`}
-                  >
-                    +
-                  </button>
-                </li>
-              ))}
+              {customFoods.map(food => {
+                const d = food.servings[defaultServingIdx(food.servings)]
+                return (
+                  <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2 bg-white dark:bg-gray-800">
+                    <button
+                      type="button"
+                      onClick={() => pickFoodForPreset(customFoodToChosen(food))}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {d ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, 'g')} protein` : ''}
+                      </p>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
 
-        {/* Items in preset */}
+        {presetPickFood && (
+          <div className="border border-indigo-200 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-lg p-3 space-y-3">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">{presetPickFood.foodName}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Serving</label>
+                <select
+                  value={presetPickServingIdx}
+                  onChange={e => setPresetPickServingIdx(Number(e.target.value))}
+                  style={{ fontSize: '16px' }}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  {presetPickFood.servings.map((s, i) => (
+                    <option key={s.id ?? s.fatSecretServingId ?? i} value={i}>
+                      {s.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  value={presetPickQuantity}
+                  onChange={e => setPresetPickQuantity(Math.max(0.25, parseFloat(e.target.value) || 0.25))}
+                  min="0.25"
+                  step="0.25"
+                  inputMode="decimal"
+                  style={{ fontSize: '16px' }}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {pickServing ? `${fmt((pickServing.calories ?? 0) * presetPickQuantity)} kcal total` : ''}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={addPickedFoodToPreset}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Add to preset
+              </button>
+              <button
+                type="button"
+                onClick={() => setPresetPickFood(null)}
+                className="text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         <div>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-              Items in this preset
-            </p>
-            {newPreset.items.length > 0 && (
-              <p className="text-xs text-gray-500 dark:text-gray-400">{Math.round(presetTotalCal)} kcal total</p>
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Items in this preset</p>
+            {presetForm.items.length > 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">{fmt(totalCal)} kcal total</p>
             )}
           </div>
-          {newPreset.items.length === 0 ? (
+          {presetForm.items.length === 0 ? (
             <p className="text-xs text-gray-400 py-2">Search and add foods above.</p>
           ) : (
             <ul className="space-y-2">
-              {newPreset.items.map((item, index) => (
-                <li key={index} className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-white dark:bg-gray-800">
+              {presetForm.items.map((item, idx) => (
+                <li key={idx} className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-white dark:bg-gray-800">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.foodName}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {Math.round(item.calories * item.servings)} kcal
+                      {item.servingDesc ? `${item.servingDesc} · ` : ''}{fmt(item.caloriesPerServing * item.quantity)} kcal
                     </p>
                   </div>
                   <input
                     type="number"
-                    value={item.servings}
-                    onChange={e => updatePresetItemServings(index, e.target.value)}
+                    value={item.quantity}
+                    onChange={e => updatePresetItemQuantity(idx, e.target.value)}
                     min="0.25"
                     step="0.25"
                     inputMode="decimal"
                     style={{ fontSize: '16px' }}
-                    className="w-16 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-700 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    aria-label={`Servings for ${item.foodName}`}
+                    className="w-16 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-700 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    aria-label={`Quantity for ${item.foodName}`}
                   />
-                  <span className="text-xs text-gray-400 dark:text-gray-500">srv</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">×</span>
                   <button
                     type="button"
-                    onClick={() => removePresetItem(index)}
-                    className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
+                    onClick={() => removePresetItem(idx)}
                     aria-label={`Remove ${item.foodName}`}
+                    className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
                   >
                     <CloseIcon className="w-4 h-4" />
                   </button>
@@ -981,25 +1381,23 @@ export default function Meals() {
           )}
         </div>
 
-        {presetError && (
-          <p className="text-xs text-red-600">{presetError}</p>
-        )}
+        {presetError && <p className="text-xs text-red-600">{presetError}</p>}
 
         <button
           type="button"
-          onClick={editingPreset ? handleUpdatePreset : handleSavePreset}
-          disabled={savingPreset || !newPreset.name.trim() || newPreset.items.length === 0}
+          onClick={handleSavePreset}
+          disabled={savingPreset || !presetForm.name.trim() || presetForm.items.length === 0}
           className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
         >
-          {savingPreset ? 'Saving...' : editingPreset ? 'Save Changes' : 'Save Preset'}
+          {savingPreset ? 'Saving...' : presetForm.id ? 'Save Changes' : 'Save Preset'}
         </button>
       </div>
     )
   }
 
+  // ─── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* Header + Date Picker */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Meal Logger</h1>
         <input
@@ -1017,7 +1415,6 @@ export default function Meals() {
         </div>
       )}
 
-      {/* Nutrition Goals */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
           <h2 className="text-sm font-bold text-gray-900 dark:text-white">Nutrition Goals</h2>
@@ -1092,35 +1489,30 @@ export default function Meals() {
         </div>
       ) : (
         <>
-          {/* Meal Sections */}
           {MEAL_TYPES.map(mealType => {
             const items = meals?.[mealType] || []
             const subtotal = items.reduce((sum, item) => sum + (item.calories || 0), 0)
 
             return (
               <div key={mealType} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
-                {/* Section header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
                   <h2 className="text-sm font-semibold text-gray-900 dark:text-white capitalize">{mealType}</h2>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{Math.round(subtotal)} kcal</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{fmt(subtotal)} kcal</span>
                 </div>
 
-                {/* Food items */}
                 {items.length > 0 ? (
                   <ul className="divide-y divide-gray-50 dark:divide-gray-700">
                     {items.map(item => (
                       <li key={item.id} className="flex items-center justify-between px-5 py-3 gap-3">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{item.foodName}</p>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                            {item.foodName}
+                            {item.brandName ? <span className="text-gray-400 dark:text-gray-500 font-normal"> · {item.brandName}</span> : null}
+                          </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            {item.servingSize && item.servingSize !== 1 ? `${item.servingSize} servings · ` : ''}
-                            {Math.round(item.calories)} kcal
-                            {' · '}
-                            {Math.round(item.protein)}g protein
-                            {' · '}
-                            {Math.round(item.carbs)}g carbs
-                            {' · '}
-                            {Math.round(item.fat)}g fat
+                            {item.quantity && item.quantity !== 1 ? `${item.quantity}× ` : ''}
+                            {item.servingDesc ? `${item.servingDesc} · ` : ''}
+                            {fmt(item.calories)} kcal · {fmt(item.protein, 'g')} protein · {fmt(item.carbs, 'g')} carbs · {fmt(item.fat, 'g')} fat
                           </p>
                         </div>
                         <button
@@ -1140,7 +1532,6 @@ export default function Meals() {
                   <p className="px-5 py-3 text-sm text-gray-400 dark:text-gray-500">Nothing logged yet.</p>
                 )}
 
-                {/* Add food + Presets + Save as Preset buttons */}
                 <div className="px-5 py-3 border-t border-gray-50 dark:border-gray-700 flex items-center gap-4">
                   <button
                     onClick={() => openSlideOver(mealType)}
@@ -1164,7 +1555,6 @@ export default function Meals() {
                   )}
                 </div>
 
-                {/* Inline save-as-preset form */}
                 {saveAsMeal?.mealType === mealType && (
                   <div className="px-5 py-3 border-t border-indigo-50 dark:border-indigo-900/30 bg-indigo-50/40 dark:bg-indigo-900/10 space-y-2">
                     <p className="text-xs font-semibold text-gray-600 dark:text-gray-400">Save "{mealType}" as a preset:</p>
@@ -1192,33 +1582,30 @@ export default function Meals() {
                         Cancel
                       </button>
                     </div>
-                    {saveAsMeal.error && (
-                      <p className="text-xs text-red-600">{saveAsMeal.error}</p>
-                    )}
+                    {saveAsMeal.error && <p className="text-xs text-red-600">{saveAsMeal.error}</p>}
                   </div>
                 )}
               </div>
             )
           })}
 
-          {/* Daily Totals */}
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm px-5 py-4">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Daily Totals</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totals.calories || 0)}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(totals.calories || 0)}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Calories</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{Math.round(totals.protein || 0)}g</p>
+                <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{fmt(totals.protein || 0, 'g')}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Protein</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totals.carbs || 0)}g</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(totals.carbs || 0, 'g')}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Carbs</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totals.fat || 0)}g</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(totals.fat || 0, 'g')}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Fat</p>
               </div>
             </div>
@@ -1226,16 +1613,10 @@ export default function Meals() {
         </>
       )}
 
-      {/* Slide-over overlay */}
       {slideOver.open && (
-        <div
-          className="fixed inset-0 bg-black/40 z-40"
-          onClick={closeSlideOver}
-          aria-hidden="true"
-        />
+        <div className="fixed inset-0 bg-black/40 z-40" onClick={closeSlideOver} aria-hidden="true" />
       )}
 
-      {/* Slide-over panel */}
       <div
         className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white dark:bg-gray-900 shadow-xl z-50 flex flex-col transition-transform duration-300 ${
           slideOver.open ? 'translate-x-0' : 'translate-x-full'
@@ -1244,7 +1625,6 @@ export default function Meals() {
         role="dialog"
         aria-label="Add food panel"
       >
-        {/* Panel header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white capitalize">
             {panelMode === 'presets' || panelMode === 'new-preset'
@@ -1261,16 +1641,6 @@ export default function Meals() {
                 Presets
               </button>
             )}
-            {panelMode === 'manual' && (
-              <button
-                type="button"
-                onClick={() => setPanelMode('search')}
-                className="w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                aria-label="Back to search"
-              >
-                <BackIcon className="w-4 h-4" />
-              </button>
-            )}
             <button
               onClick={closeSlideOver}
               aria-label="Close panel"
@@ -1281,12 +1651,12 @@ export default function Meals() {
           </div>
         </div>
 
-        {/* Panel body */}
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-          {panelMode === 'search' && renderSearchPanel()}
-          {panelMode === 'manual' && renderManualPanel()}
-          {panelMode === 'presets' && renderPresetsPanel()}
-          {panelMode === 'new-preset' && renderNewPresetPanel()}
+          {panelMode === 'search'      && renderSearchPanel()}
+          {panelMode === 'log'         && renderLogPanel()}
+          {panelMode === 'custom-food' && renderCustomFoodPanel()}
+          {panelMode === 'presets'     && renderPresetsPanel()}
+          {panelMode === 'new-preset'  && renderNewPresetPanel()}
         </div>
       </div>
     </div>

@@ -27,10 +27,10 @@ async function buildDaySummary(userId, dateStr) {
 
   const consumed = meals.reduce(
     (acc, m) => ({
-      calories: acc.calories + m.calories,
-      protein: acc.protein + m.protein,
-      carbs: acc.carbs + m.carbs,
-      fat: acc.fat + m.fat,
+      calories: acc.calories + (m.caloriesSnapshot ?? 0),
+      protein:  acc.protein  + (m.proteinSnapshot  ?? 0),
+      carbs:    acc.carbs    + (m.carbsSnapshot    ?? 0),
+      fat:      acc.fat      + (m.fatSnapshot      ?? 0),
     }),
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   );
