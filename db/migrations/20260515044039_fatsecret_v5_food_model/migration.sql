@@ -27,6 +27,14 @@
 -- DropForeignKey
 ALTER TABLE "CustomFood" DROP CONSTRAINT "CustomFood_userId_fkey";
 
+-- Destructive: the new schema adds required (NOT NULL, no default) snapshot
+-- columns to MealEntry and MealPresetItem, which Postgres rejects on a
+-- non-empty table. The food model overhaul made the legacy rows untranslatable,
+-- so we drop existing rows here. The app was in alpha when this migration was
+-- written and the project owner accepted the data loss; do NOT copy this
+-- pattern in later migrations.
+TRUNCATE TABLE "MealEntry", "MealPresetItem", "CustomFood" RESTART IDENTITY CASCADE;
+
 -- AlterTable
 ALTER TABLE "MealEntry" DROP COLUMN "calories",
 DROP COLUMN "carbs",

@@ -370,6 +370,7 @@ export default function Meals() {
         name: existing.name,
         brandName: existing.brandName ?? '',
         servings: existing.servings.map(s => ({
+          id:           s.id,
           description:  s.description ?? '',
           metricAmount: s.metricAmount ?? '',
           metricUnit:   s.metricUnit ?? '',
@@ -432,14 +433,15 @@ export default function Meals() {
       name: customFoodForm.name.trim(),
       brandName: customFoodForm.brandName.trim() || null,
       servings: customFoodForm.servings.map(s => ({
+        id: typeof s.id === 'string' ? s.id : null,
         description: s.description.trim(),
         metricAmount: s.metricAmount === '' ? null : Number(s.metricAmount),
         metricUnit:   s.metricUnit.trim() || null,
         isDefault:    s.isDefault === true,
-        calories: Number(s.calories) || 0,
-        protein:  Number(s.protein)  || 0,
-        carbs:    Number(s.carbs)    || 0,
-        fat:      Number(s.fat)      || 0,
+        calories: Number(s.calories),
+        protein:  Number(s.protein),
+        carbs:    Number(s.carbs),
+        fat:      Number(s.fat),
         fiber:        s.fiber        === '' ? null : Number(s.fiber),
         sugar:        s.sugar        === '' ? null : Number(s.sugar),
         sodium:       s.sodium       === '' ? null : Number(s.sodium),
@@ -454,6 +456,13 @@ export default function Meals() {
     if (customFoodForm.servings.length === 0) { setCustomFoodError('Add at least one serving.'); return }
     for (const [i, s] of customFoodForm.servings.entries()) {
       if (!s.description.trim()) { setCustomFoodError(`Serving ${i + 1}: description is required.`); return }
+      for (const field of ['calories', 'protein', 'carbs', 'fat']) {
+        const n = Number(s[field])
+        if (s[field] === '' || !Number.isFinite(n) || n < 0) {
+          setCustomFoodError(`Serving ${i + 1}: ${field} is required and must be a non-negative number.`)
+          return
+        }
+      }
     }
     setSavingCustomFood(true)
     setCustomFoodError('')

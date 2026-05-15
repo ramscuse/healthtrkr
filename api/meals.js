@@ -26,6 +26,14 @@ function isNullableFinite(v) {
   return v === null || v === undefined || isFiniteNumber(v);
 }
 
+function isNullableNonNegFinite(v) {
+  return v === null || v === undefined || (isFiniteNumber(v) && v >= 0);
+}
+
+function isNullableString(v) {
+  return v === null || v === undefined || typeof v === 'string';
+}
+
 // Compute snapshot macros = serving.macro * quantity. Required macros default
 // to 0 to avoid writing NaN into NOT NULL columns if a serving somehow has a
 // missing required nutrient; optional ones stay null when absent.
@@ -111,6 +119,10 @@ function serializeEntry(e) {
 // GET /foods/:foodId when the user picks a result.
 router.get('/search', async (req, res, next) => {
   try {
+    // Express parses repeated `?q=` params as arrays, so guard before .trim().
+    if (req.query.q != null && typeof req.query.q !== 'string') {
+      return res.status(400).json({ error: 'q must be a string' });
+    }
     const q = (req.query.q || '').trim();
     if (q.length < 2) return res.json({ foods: [] });
 
@@ -342,15 +354,24 @@ function validateCustomServingsPayload(servings) {
     if (typeof s.description !== 'string' || !s.description.trim()) {
       return `servings[${i}].description is required`;
     }
+    if (!isNullableString(s.metricUnit)) {
+      return `servings[${i}].metricUnit must be a string`;
+    }
+    if (!isNullableString(s.measurementDescription)) {
+      return `servings[${i}].measurementDescription must be a string`;
+    }
     for (const field of ['calories', 'protein', 'carbs', 'fat']) {
       if (!isFiniteNumber(s[field]) || s[field] < 0) {
         return `servings[${i}].${field} must be a finite non-negative number`;
       }
     }
     for (const field of ['fiber', 'sugar', 'sodium', 'saturatedFat', 'addedSugars', 'metricAmount', 'numberOfUnits']) {
-      if (!isNullableFinite(s[field])) {
-        return `servings[${i}].${field} must be null or a finite number`;
+      if (!isNullableNonNegFinite(s[field])) {
+        return `servings[${i}].${field} must be null or a finite non-negative number`;
       }
+    }
+    if (s.id != null && typeof s.id !== 'string') {
+      return `servings[${i}].id must be a string`;
     }
     if (s.isDefault === true) defaultCount += 1;
   }
@@ -358,12 +379,13 @@ function validateCustomServingsPayload(servings) {
   return null;
 }
 
-function mapCustomServings(servings) {
-  return servings.map(s => ({
+function servingPayload(s) {
+  return {
     description: s.description.trim(),
     metricAmount: s.metricAmount ?? null,
-    metricUnit: s.metricUnit?.trim() || null,
-    measurementDescription: s.measurementDescription?.trim() || null,
+    metricUnit: typeof s.metricUnit === 'string' ? (s.metricUnit.trim() || null) : null,
+    measurementDescription:
+      typeof s.measurementDescription === 'string' ? (s.measurementDescription.trim() || null) : null,
     numberOfUnits: s.numberOfUnits ?? null,
     isDefault: s.isDefault === true,
     calories: s.calories,
@@ -375,7 +397,11 @@ function mapCustomServings(servings) {
     sodium:       s.sodium       ?? null,
     saturatedFat: s.saturatedFat ?? null,
     addedSugars:  s.addedSugars  ?? null,
-  }));
+  };
+}
+
+function mapCustomServings(servings) {
+  return servings.map(servingPayload);
 }
 
 // GET /api/meals/custom-foods
@@ -399,6 +425,9 @@ router.post('/custom-foods', async (req, res, next) => {
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
+    if (!isNullableString(brandName)) {
+      return res.status(400).json({ error: 'brandName must be a string' });
+    }
     const servingsErr = validateCustomServingsPayload(servings);
     if (servingsErr) return res.status(400).json({ error: servingsErr });
 
@@ -407,7 +436,7 @@ router.post('/custom-foods', async (req, res, next) => {
         source: 'custom',
         userId,
         name: name.trim(),
-        brandName: brandName?.trim() || null,
+        brandName: typeof brandName === 'string' ? (brandName.trim() || null) : null,
         foodType: 'Custom',
         servings: { create: mapCustomServings(servings) },
       },
@@ -421,6 +450,10 @@ router.post('/custom-foods', async (req, res, next) => {
 });
 
 // PUT /api/meals/custom-foods/:id
+// Servings carry their own id when the client edits an existing one. We
+// upsert by id so unchanged servings keep their primary key, preserving
+// MealPresetItem references (which cascade-delete when a serving id goes
+// away) and MealEntry.servingId pointers.
 router.put('/custom-foods/:id', async (req, res, next) => {
   try {
     const { userId } = req.user;
@@ -430,23 +463,45 @@ router.put('/custom-foods/:id', async (req, res, next) => {
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
+    if (!isNullableString(brandName)) {
+      return res.status(400).json({ error: 'brandName must be a string' });
+    }
     const servingsErr = validateCustomServingsPayload(servings);
     if (servingsErr) return res.status(400).json({ error: servingsErr });
 
-    const existing = await prisma.food.findUnique({ where: { id } });
+    const existing = await prisma.food.findUnique({
+      where: { id },
+      include: { servings: true },
+    });
     if (!existing) return res.status(404).json({ error: 'Custom food not found' });
     if (existing.source !== 'custom' || existing.userId !== userId) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    const existingIds = new Set(existing.servings.map(s => s.id));
+    const incomingIds = new Set();
+    for (const s of servings) {
+      if (typeof s.id === 'string' && existingIds.has(s.id)) incomingIds.add(s.id);
+    }
+    const removedIds = [...existingIds].filter(sid => !incomingIds.has(sid));
+
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.foodServing.deleteMany({ where: { foodId: id } });
+      if (removedIds.length) {
+        await tx.foodServing.deleteMany({ where: { id: { in: removedIds } } });
+      }
+      for (const s of servings) {
+        const data = servingPayload(s);
+        if (typeof s.id === 'string' && existingIds.has(s.id)) {
+          await tx.foodServing.update({ where: { id: s.id }, data });
+        } else {
+          await tx.foodServing.create({ data: { ...data, foodId: id } });
+        }
+      }
       return tx.food.update({
         where: { id },
         data: {
           name: name.trim(),
-          brandName: brandName?.trim() || null,
-          servings: { create: mapCustomServings(servings) },
+          brandName: typeof brandName === 'string' ? (brandName.trim() || null) : null,
         },
         include: { servings: { orderBy: { createdAt: 'asc' } } },
       });
@@ -471,8 +526,6 @@ router.delete('/custom-foods/:id', async (req, res, next) => {
     await prisma.food.delete({ where: { id } });
     res.status(204).send();
   } catch (err) {
-    // P2003: serving still referenced by a preset (Restrict).
-    if (err.code === 'P2003') return res.status(409).json({ error: 'This food is used by a preset — remove it from the preset first.' });
     next(err);
   }
 });

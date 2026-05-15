@@ -1,5 +1,6 @@
 const TOKEN_URL = 'https://oauth.fatsecret.com/connect/token';
 const API_URL   = 'https://platform.fatsecret.com/rest/server.api';
+const FETCH_TIMEOUT_MS = 10_000;
 
 class FatSecretError extends Error {
   constructor(code, message) {
@@ -29,6 +30,7 @@ async function getToken() {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: 'grant_type=client_credentials&scope=basic',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!res.ok) throw new Error(`FatSecret token request failed: ${res.status}`);
@@ -50,6 +52,7 @@ async function apiFetch(method, params) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
   if (!res.ok) throw new Error(`FatSecret HTTP error: ${res.status}`);
