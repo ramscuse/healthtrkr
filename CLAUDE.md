@@ -107,6 +107,8 @@ Required in `.env`:
 - `DATABASE_URL` — PostgreSQL connection string
 - `JWT_SECRET` — used for HS256 token signing (7d expiry)
 - `HEALTH_SYNC_TOKEN` — shared token for Apple Health sync endpoint
+- `FATSECRET_CLIENT_ID` — OAuth 2.0 client ID for FatSecret food search API
+- `FATSECRET_CLIENT_SECRET` — OAuth 2.0 client secret for FatSecret food search API
 - `CORS_ORIGIN` — defaults to `http://localhost:5173`
 - `PORT` — defaults to `3001`
 
