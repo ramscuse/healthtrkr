@@ -2,8 +2,8 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import prisma from '../lib/prisma.js';
-import { sendPasswordResetEmail } from '../lib/email.js';
+import prisma from '../../lib/prisma.js';
+import { sendPasswordResetEmail } from '../../lib/email.js';
 
 const router = Router();
 const SALT_ROUNDS = 12;

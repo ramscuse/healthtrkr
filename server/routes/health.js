@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'crypto';
-import prisma from '../lib/prisma.js';
-import { authMiddleware } from '../server/middleware/auth.js';
+import prisma from '../../lib/prisma.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 

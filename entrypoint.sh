@@ -16,6 +16,8 @@ if [ -z "$DATABASE_URL" ]; then
 fi
 
 echo "Running database migrations..."
+# Prisma's directUrl falls back to DATABASE_URL if DIRECT_URL is unset,
+# which is what we want for Docker/Proxmox (no pooler in the connection path).
 ./node_modules/.bin/prisma migrate deploy
 
 echo "Starting healthtrkr server..."
