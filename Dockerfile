@@ -3,6 +3,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
+# postinstall runs `prisma generate`, which needs the schema present at install time
+COPY db/ ./db/
 RUN npm ci
 
 COPY . .
@@ -22,20 +24,17 @@ WORKDIR /app
 # curl is required by the food database seed scripts
 RUN apk add --no-cache openssl curl
 
-# Install production dependencies only
+# Install production dependencies only.
+# Schema is copied first so the package.json `postinstall` (prisma generate) succeeds.
 COPY package*.json ./
-RUN npm ci --omit=dev
-
-# Copy Prisma schema + migrations (needed for migrate deploy + generate)
 COPY db/ ./db/
-
-# Generate the Prisma client against the production node_modules
-RUN npx prisma generate
+RUN npm ci --omit=dev
 
 # Copy built frontend
 COPY --from=builder /app/src/dist ./src/dist
 
-# Copy server source
+# Copy server source (routes live under server/routes/ now;
+# api/index.js is the Vercel entry and is harmless in Docker)
 COPY server/ ./server/
 COPY api/ ./api/
 COPY lib/ ./lib/

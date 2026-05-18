@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import prisma from '../lib/prisma.js';
-import { searchFoods, fetchFoodById, materializeFood } from '../server/fatSecret.js';
+import prisma from '../../lib/prisma.js';
+import { searchFoods, fetchFoodById, materializeFood } from '../fatSecret.js';
 
 const router = Router();
 
