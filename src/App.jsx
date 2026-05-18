@@ -9,9 +9,14 @@ import Water from './pages/Water.jsx'
 import Account from './pages/Account.jsx'
 import Layout from './components/Layout.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
+import { SpeedInsights } from "@vercel/speed-insights/next"
+import { Analytics } from "@vercel/analytics/next"
 
 export default function App() {
   return (
+    <>
+    <SpeedInsights />
+    <Analytics />
     <ThemeProvider>
     <Routes>
       <Route path="/login" element={<Auth />} />
@@ -85,5 +90,6 @@ export default function App() {
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
     </ThemeProvider>
+    </>
   )
 }

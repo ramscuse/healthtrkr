@@ -7,3 +7,5 @@ src/dist/
 data/foods.json
 .claude/
 docker-compose.override.yml
+.vercel
+.env*.local
