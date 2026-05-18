@@ -1,5 +1,6 @@
-const TOKEN_URL = 'https://oauth.fatsecret.com/connect/token';
-const API_URL   = 'https://platform.fatsecret.com/rest/server.api';
+import crypto from 'crypto';
+
+const API_URL = 'https://platform.fatsecret.com/rest/server.api';
 const FETCH_TIMEOUT_MS = 10_000;
 
 class FatSecretError extends Error {
@@ -10,48 +11,56 @@ class FatSecretError extends Error {
   }
 }
 
-let accessToken  = null;
-let expiresAt    = 0;      // ms epoch
-let tokenPromise = null;   // in-flight guard — prevents concurrent token fetches
-
-async function getToken() {
-  if (accessToken && Date.now() < expiresAt - 60_000) return accessToken;
-  if (tokenPromise) return tokenPromise;
-
-  tokenPromise = (async () => {
-    const { FATSECRET_CLIENT_ID: id, FATSECRET_CLIENT_SECRET: secret } = process.env;
-    if (!id || !secret) throw new Error('FATSECRET_CLIENT_ID / FATSECRET_CLIENT_SECRET not set');
-
-    const credentials = Buffer.from(`${id}:${secret}`).toString('base64');
-    const res = await fetch(TOKEN_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'grant_type=client_credentials&scope=basic',
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-
-    if (!res.ok) throw new Error(`FatSecret token request failed: ${res.status}`);
-    const data = await res.json();
-    accessToken = data.access_token;
-    expiresAt   = Date.now() + data.expires_in * 1000;
-    return accessToken;
-  })().finally(() => { tokenPromise = null; });
-
-  return tokenPromise;
+// Stricter percent-encoding than encodeURIComponent — RFC 3986 also encodes !'()*
+function pctEncode(s) {
+  return encodeURIComponent(String(s)).replace(
+    /[!'()*]/g,
+    c => '%' + c.charCodeAt(0).toString(16).toUpperCase()
+  );
 }
 
-async function apiFetch(method, params) {
-  const token = await getToken();
-  const url   = new URL(API_URL);
-  url.searchParams.set('method', method);
-  url.searchParams.set('format', 'json');
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+// OAuth 1.0a signature for 2-legged (server-only) requests. Token secret is
+// empty since we never exchange for a user token.
+function signRequest(httpMethod, url, params, consumerSecret) {
+  const paramString = Object.keys(params)
+    .sort()
+    .map(k => `${pctEncode(k)}=${pctEncode(params[k])}`)
+    .join('&');
+  const baseString = `${httpMethod.toUpperCase()}&${pctEncode(url)}&${pctEncode(paramString)}`;
+  const signingKey = `${pctEncode(consumerSecret)}&`;
+  return crypto.createHmac('sha1', signingKey).update(baseString).digest('base64');
+}
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
+// We sign with OAuth 1.0a because FatSecret's OAuth 2.0 endpoint requires
+// server IP whitelisting, which is incompatible with Vercel's dynamic egress
+// IPs. FatSecret issues separate credentials for 1.0 (consumer key + shared
+// secret) and 2.0 (client id + client secret) — these env vars hold the 1.0 set.
+async function apiFetch(method, params) {
+  const { FATSECRET_CONSUMER_KEY: key, FATSECRET_CONSUMER_SECRET: secret } = process.env;
+  if (!key || !secret) throw new Error('FATSECRET_CONSUMER_KEY / FATSECRET_CONSUMER_SECRET not set');
+
+  const allParams = {
+    method,
+    format: 'json',
+    ...params,
+    oauth_consumer_key: key,
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_nonce: crypto.randomBytes(16).toString('hex'),
+    oauth_version: '1.0',
+  };
+  for (const k of Object.keys(allParams)) allParams[k] = String(allParams[k]);
+
+  allParams.oauth_signature = signRequest('POST', API_URL, allParams, secret);
+
+  const body = Object.entries(allParams)
+    .map(([k, v]) => `${pctEncode(k)}=${pctEncode(v)}`)
+    .join('&');
+
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
