@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { getAccount, updateAccount } from '../lib/api.js'
+import { updateAccount } from '../lib/api.js'
+import { useUser } from './UserContext.jsx'
 
 const ThemeContext = createContext({ darkMode: false, toggleDarkMode: () => {} })
 
@@ -10,20 +11,15 @@ function applyThemeColor(dark) {
 }
 
 export function ThemeProvider({ children }) {
+  const { user } = useUser()
   const [darkMode, setDarkMode] = useState(false)
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return
-    getAccount()
-      .then(user => {
-        const dm = user.darkMode || false
-        setDarkMode(dm)
-        document.documentElement.classList.toggle('dark', dm)
-        applyThemeColor(dm)
-      })
-      .catch(() => {})
-  }, [])
+    const dm = user?.darkMode || false
+    setDarkMode(dm)
+    document.documentElement.classList.toggle('dark', dm)
+    applyThemeColor(dm)
+  }, [user?.darkMode])
 
   async function toggleDarkMode() {
     const next = !darkMode

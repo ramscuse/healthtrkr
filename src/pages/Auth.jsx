@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login, register, forgotPassword, resetPassword } from '../lib/api.js'
+import { useUser } from '../context/UserContext.jsx'
 
 // view: 'login' | 'register' | 'forgot' | 'reset'
 export default function Auth() {
   const navigate = useNavigate()
+  const { refresh: refreshUser } = useUser()
   const [view, setView] = useState('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -37,6 +39,7 @@ export default function Auth() {
       } else {
         await register(email, password, name)
       }
+      await refreshUser()
       navigate('/')
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
