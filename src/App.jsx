@@ -7,8 +7,9 @@ import Workouts from './pages/Workouts.jsx'
 import Progress from './pages/Progress.jsx'
 import Water from './pages/Water.jsx'
 import Account from './pages/Account.jsx'
+import Admin from './pages/Admin.jsx'
 import Layout from './components/Layout.jsx'
-import ProtectedRoute from './components/ProtectedRoute.jsx'
+import ProtectedRoute, { AdminRoute } from './components/ProtectedRoute.jsx'
 import { SpeedInsights } from "@vercel/speed-insights/react"
 import { Analytics } from "@vercel/analytics/react"
 
@@ -84,6 +85,17 @@ export default function App() {
               <Account />
             </Layout>
           </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <Layout>
+              <Admin />
+            </Layout>
+          </AdminRoute>
         }
       />
 

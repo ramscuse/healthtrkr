@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-import { authMiddleware } from './middleware/auth.js';
+import { authMiddleware, requireAdmin } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 import authRouter from './routes/auth.js';
@@ -17,6 +17,7 @@ import workoutsRouter, { workoutsTemplateHandler } from './routes/workouts.js';
 import healthRouter from './routes/health.js';
 import progressRouter from './routes/progress.js';
 import waterRouter from './routes/water.js';
+import adminRouter from './routes/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -58,6 +59,7 @@ app.use('/api/health/sync', syncLimiter);
 app.use('/api/health', healthRouter);
 app.use('/api/progress', authMiddleware, progressRouter);
 app.use('/api/water', authMiddleware, waterRouter);
+app.use('/api/admin', authMiddleware, requireAdmin, adminRouter);
 
 if (process.env.NODE_ENV === 'production') {
   // Docker/Proxmox path only — on Vercel, static files are served before this

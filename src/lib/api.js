@@ -239,3 +239,26 @@ export async function updateGoals(data) {
 export async function getProgressRange(startDate, numDays) {
   return request(`/api/progress/range?startDate=${startDate}&numDays=${numDays}`)
 }
+
+export async function getUsers() {
+  return request('/api/admin/users')
+}
+
+export async function getUserById(id) {
+  return request(`/api/admin/users/${id}`)
+}
+
+export async function updateUser(id, patch) {
+  return request(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(patch) })
+}
+
+export async function resetUserPassword(id, newPassword) {
+  return request(`/api/admin/users/${id}/password`, {
+    method: 'PUT',
+    body: JSON.stringify({ newPassword }),
+  })
+}
+
+export async function deleteUser(id) {
+  return request(`/api/admin/users/${id}`, { method: 'DELETE' })
+}

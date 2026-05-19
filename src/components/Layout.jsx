@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { logout } from '../lib/api.js'
+import { useUser } from '../context/UserContext.jsx'
 
 function HomeIcon({ className = 'w-5 h-5' }) {
   return (
@@ -50,7 +51,15 @@ function AccountIcon({ className = 'w-5 h-5' }) {
   )
 }
 
-const navItems = [
+function ShieldIcon({ className = 'w-5 h-5' }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .331.077l7.5 3.75a.75.75 0 0 1 .419.673c0 6.157-3.587 10.61-7.59 12.226a.75.75 0 0 1-.52 0C7.838 17.36 4.25 12.907 4.25 6.75a.75.75 0 0 1 .419-.673l7.5-3.75A.75.75 0 0 1 12 2.25Zm3.546 6.97a.75.75 0 1 0-1.092-1.04l-3.755 3.943-1.85-1.74a.75.75 0 0 0-1.028 1.093l2.395 2.25a.75.75 0 0 0 1.06-.026l4.27-4.48Z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
+const baseNavItems = [
   { to: '/',          label: 'Dashboard', mobileLabel: 'Home',      Icon: HomeIcon },
   { to: '/meals',     label: 'Meals',     mobileLabel: 'Meals',     Icon: MealsIcon },
   { to: '/workouts',  label: 'Workouts',  mobileLabel: 'Workouts',  Icon: WorkoutsIcon },
@@ -58,13 +67,15 @@ const navItems = [
   { to: '/progress',  label: 'Progress',  mobileLabel: 'Progress',  Icon: ProgressIcon },
 ]
 
-const mobileNavItems = [
-  ...navItems,
-  { to: '/account', label: 'Account', mobileLabel: 'Account', Icon: AccountIcon },
-]
+const adminNavItem = { to: '/admin', label: 'Admin', mobileLabel: 'Admin', Icon: ShieldIcon }
 
 export default function Layout({ children }) {
   const navigate = useNavigate()
+  const { user } = useUser()
+
+  const isAdmin = user?.role === 'admin'
+  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems
+  const mobileNavItems = [...navItems, { to: '/account', label: 'Account', mobileLabel: 'Account', Icon: AccountIcon }]
 
   async function handleLogout() {
     try { await logout() } catch { /* ignore */ }
