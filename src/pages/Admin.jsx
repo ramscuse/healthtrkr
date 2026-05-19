@@ -116,7 +116,9 @@ export default function Admin() {
         className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white dark:bg-gray-900 shadow-xl z-50 flex flex-col transition-transform duration-300 ${
           selectedId ? 'translate-x-0' : 'translate-x-full'
         }`}
-        aria-modal="true"
+        aria-modal={selectedId ? 'true' : undefined}
+        aria-hidden={selectedId ? undefined : 'true'}
+        inert={selectedId ? undefined : ''}
         role="dialog"
         aria-label="Edit user panel"
       >
@@ -162,6 +164,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onChanged, onDeleted }) {
   const [pwLoading, setPwLoading] = useState(false)
   const [pwError, setPwError] = useState('')
   const [pwSuccess, setPwSuccess] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -321,12 +324,21 @@ function EditorPanel({ target, isSelf, isLastAdmin, onChanged, onDeleted }) {
 
         <form onSubmit={handleResetPassword} className="space-y-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">New password</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400">New password</label>
+              <button
+                type="button"
+                onClick={() => setShowPassword(s => !s)}
+                className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
             <input
-              type="text"
+              type={showPassword ? 'text' : 'password'}
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
-              autoComplete="off"
+              autoComplete="new-password"
               style={{ fontSize: '16px' }}
               className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />

@@ -53,12 +53,6 @@ router.get('/users/:id', async (req, res, next) => {
 // PUT /api/admin/users/:id — update name / role / darkMode
 router.put('/users/:id', async (req, res, next) => {
   try {
-    const target = await prisma.user.findUnique({
-      where: { id: req.params.id },
-      select: { id: true, role: true },
-    })
-    if (!target) return res.status(404).json({ error: 'User not found' })
-
     const { name, role, darkMode } = req.body
     const data = {}
 
@@ -91,13 +85,23 @@ router.put('/users/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'No editable fields provided' })
     }
 
-    // Wrap last-admin check + update in a serializable transaction so two
-    // concurrent demotions can't both observe adminCount > 1 and leave zero admins.
-    const demotingAdmin = target.role === 'admin' && data.role === 'user'
+    // Read target inside the transaction so the last-admin check operates on
+    // the same snapshot as the update — prevents a concurrent demotion from
+    // making `target.role` stale and slipping past the guard.
     try {
       const updated = await prisma.$transaction(
         async (tx) => {
-          if (demotingAdmin) {
+          const target = await tx.user.findUnique({
+            where: { id: req.params.id },
+            select: { id: true, role: true },
+          })
+          if (!target) {
+            const err = new Error('User not found')
+            err.code = 'NOT_FOUND'
+            throw err
+          }
+
+          if (target.role === 'admin' && data.role === 'user') {
             const adminCount = await tx.user.count({ where: { role: 'admin' } })
             if (adminCount <= 1) {
               const err = new Error('Cannot demote the last admin')
@@ -105,6 +109,7 @@ router.put('/users/:id', async (req, res, next) => {
               throw err
             }
           }
+
           return tx.user.update({
             where: { id: target.id },
             data,
@@ -115,9 +120,8 @@ router.put('/users/:id', async (req, res, next) => {
       )
       res.json(updated)
     } catch (err) {
-      if (err.code === 'LAST_ADMIN') {
-        return res.status(400).json({ error: err.message })
-      }
+      if (err.code === 'NOT_FOUND') return res.status(404).json({ error: err.message })
+      if (err.code === 'LAST_ADMIN') return res.status(400).json({ error: err.message })
       throw err
     }
   } catch (err) {
@@ -166,16 +170,21 @@ router.delete('/users/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'Admins cannot delete their own account' })
     }
 
-    const target = await prisma.user.findUnique({
-      where: { id: req.params.id },
-      select: { id: true, role: true },
-    })
-    if (!target) return res.status(404).json({ error: 'User not found' })
-
-    // Serializable so a delete + demote (or two deletes) can't race past the guard.
+    // Read target inside the transaction so the last-admin check sees the
+    // same snapshot as the delete (a concurrent demote-then-delete pair would
+    // otherwise both observe a stale role and could empty the admin set).
     try {
       await prisma.$transaction(
         async (tx) => {
+          const target = await tx.user.findUnique({
+            where: { id: req.params.id },
+            select: { id: true, role: true },
+          })
+          if (!target) {
+            const err = new Error('User not found')
+            err.code = 'NOT_FOUND'
+            throw err
+          }
           if (target.role === 'admin') {
             const adminCount = await tx.user.count({ where: { role: 'admin' } })
             if (adminCount <= 1) {
@@ -190,9 +199,8 @@ router.delete('/users/:id', async (req, res, next) => {
       )
       res.status(204).end()
     } catch (err) {
-      if (err.code === 'LAST_ADMIN') {
-        return res.status(400).json({ error: err.message })
-      }
+      if (err.code === 'NOT_FOUND') return res.status(404).json({ error: err.message })
+      if (err.code === 'LAST_ADMIN') return res.status(400).json({ error: err.message })
       throw err
     }
   } catch (err) {
