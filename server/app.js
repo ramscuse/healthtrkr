@@ -2,12 +2,13 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 import { authMiddleware, requireAdmin } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { authLimiter, apiLimiter, passwordChangeLimiter } from './middleware/limits.js';
 
 import authRouter from './routes/auth.js';
 import accountRouter from './routes/account.js';
@@ -22,6 +23,14 @@ import adminRouter from './routes/admin.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+app.disable('x-powered-by');
+
+// Helmet sets sensible security headers. CSP is left off because Vite emits
+// hashed inline scripts that would need a tuned directive set; tracked as
+// follow-up. All other defaults (HSTS, X-Content-Type-Options, X-Frame-Options,
+// Referrer-Policy, etc.) are on.
+app.use(helmet({ contentSecurityPolicy: false }));
+
 // Trust the first hop of X-Forwarded-* headers (Vercel edge, Render/Proxmox reverse proxies).
 // Without this, req.secure is false behind HTTPS-terminating proxies and the rate limiter
 // sees every request from the same proxy IP.
@@ -31,35 +40,16 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', crede
 app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 
-// Rate limit auth endpoints — 20 requests per 15 minutes per IP
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
-});
-
-// Rate limit health sync — 60 requests per minute (Apple Watch syncs frequently)
-const syncLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Sync rate limit exceeded.' },
-});
-
 app.use('/api/auth', authLimiter, authRouter);
-app.use('/api/account', authMiddleware, accountRouter);
-app.use('/api/goals', authMiddleware, goalsRouter);
-app.use('/api/meals', authMiddleware, mealsRouter);
+app.use('/api/account', authMiddleware, apiLimiter, accountRouter);
+app.use('/api/goals', authMiddleware, apiLimiter, goalsRouter);
+app.use('/api/meals', authMiddleware, apiLimiter, mealsRouter);
 app.get('/api/workouts/template', workoutsTemplateHandler);
-app.use('/api/workouts', authMiddleware, workoutsRouter);
-app.use('/api/health/sync', syncLimiter);
-app.use('/api/health', healthRouter);
-app.use('/api/progress', authMiddleware, progressRouter);
-app.use('/api/water', authMiddleware, waterRouter);
-app.use('/api/admin', authMiddleware, requireAdmin, adminRouter);
+app.use('/api/workouts', authMiddleware, apiLimiter, workoutsRouter);
+app.use('/api/health', authMiddleware, apiLimiter, healthRouter);
+app.use('/api/progress', authMiddleware, apiLimiter, progressRouter);
+app.use('/api/water', authMiddleware, apiLimiter, waterRouter);
+app.use('/api/admin', authMiddleware, requireAdmin, apiLimiter, adminRouter);
 
 if (process.env.NODE_ENV === 'production') {
   // Docker/Proxmox path only — on Vercel, static files are served before this
