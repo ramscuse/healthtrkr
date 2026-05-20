@@ -15,6 +15,51 @@ function parseDate(dateStr) {
 
 const VALID_SPLIT_DAYS = ['upper_push', 'lower_core', 'upper_pull', 'lower', 'cardio'];
 
+const MAX_EXERCISES = 50;
+const MAX_EXERCISE_NAME_LEN = 200;
+const MAX_NOTES_LEN = 2000;
+
+// Validates the shape of an exercises[] entry. The frontend submits
+// { id, name, category, muscles } — we accept that and also tolerate the
+// older { name, defaultSets, defaultReps } template shape for compatibility.
+// Returns an error string or null. Bias is shape sanity + size cap, not
+// prescriptive field policing.
+function validateExercise(ex, idx) {
+  if (!ex || typeof ex !== 'object' || Array.isArray(ex)) {
+    return `exercises[${idx}] must be an object`;
+  }
+  if (typeof ex.name !== 'string' || !ex.name.trim()) {
+    return `exercises[${idx}].name must be a non-empty string`;
+  }
+  if (ex.name.length > MAX_EXERCISE_NAME_LEN) {
+    return `exercises[${idx}].name must be ${MAX_EXERCISE_NAME_LEN} chars or less`;
+  }
+  if (ex.muscles !== undefined && !Array.isArray(ex.muscles)) {
+    return `exercises[${idx}].muscles must be an array if provided`;
+  }
+  return null;
+}
+
+function validateWorkoutPayload({ exercises, notes }) {
+  if (exercises !== undefined) {
+    if (!Array.isArray(exercises)) return 'exercises must be an array';
+    if (exercises.length > MAX_EXERCISES) {
+      return `exercises must have ${MAX_EXERCISES} or fewer entries`;
+    }
+    for (let i = 0; i < exercises.length; i++) {
+      const err = validateExercise(exercises[i], i);
+      if (err) return err;
+    }
+  }
+  if (notes !== undefined && notes !== null) {
+    if (typeof notes !== 'string') return 'notes must be a string';
+    if (notes.length > MAX_NOTES_LEN) {
+      return `notes must be ${MAX_NOTES_LEN} chars or less`;
+    }
+  }
+  return null;
+}
+
 const TEMPLATE = {
   split: [
     {
@@ -220,14 +265,13 @@ router.post('/', async (req, res, next) => {
     if (!VALID_SPLIT_DAYS.includes(splitDay)) {
       return res.status(400).json({ error: `splitDay must be one of: ${VALID_SPLIT_DAYS.join(', ')}` });
     }
-    if (!Array.isArray(exercises)) {
-      return res.status(400).json({ error: 'exercises must be an array' });
-    }
     const parsedDate = parseDate(date);
     if (!parsedDate) return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
     if (durationMin !== undefined && (!Number.isInteger(durationMin) || durationMin < 0)) {
       return res.status(400).json({ error: 'durationMin must be a non-negative integer' });
     }
+    const payloadError = validateWorkoutPayload({ exercises, notes });
+    if (payloadError) return res.status(400).json({ error: payloadError });
 
     const session = await prisma.workoutSession.create({
       data: { userId, date: parsedDate, splitDay, exercises, durationMin, notes },
@@ -253,12 +297,11 @@ router.put('/:id', async (req, res, next) => {
     if (splitDay !== undefined && !VALID_SPLIT_DAYS.includes(splitDay)) {
       return res.status(400).json({ error: `splitDay must be one of: ${VALID_SPLIT_DAYS.join(', ')}` });
     }
-    if (exercises !== undefined && !Array.isArray(exercises)) {
-      return res.status(400).json({ error: 'exercises must be an array' });
-    }
     if (durationMin !== undefined && (!Number.isInteger(durationMin) || durationMin < 0)) {
       return res.status(400).json({ error: 'durationMin must be a non-negative integer' });
     }
+    const payloadError = validateWorkoutPayload({ exercises, notes });
+    if (payloadError) return res.status(400).json({ error: payloadError });
 
     const session = await prisma.workoutSession.update({
       where: { id },

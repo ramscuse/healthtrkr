@@ -82,13 +82,13 @@ app.get('/api/workouts/template', workoutsTemplateHandler);  // public
 app.use('/api/workouts', authMiddleware, workoutsRouter);    // protected
 ```
 
-### Health Sync Auth
-`/api/health/sync` uses a **shared sync token** (`x-sync-token` header + `x-user-id` header) instead of JWT — designed for Apple Watch / Health Auto Export automation. Token comparison uses `crypto.timingSafeEqual`. The routes `/api/health/today` and `/api/health/week` apply `authMiddleware` inline (not at mount time).
+### Auth & Session Model
+- JWT is carried in an `HttpOnly`, `Secure` (prod-only), `SameSite=Strict` (prod) / `Lax` (dev) cookie named `token`. A companion non-httpOnly `sessionHint` cookie tells the frontend a session exists.
+- JWTs carry `{ userId, tokenVersion, iat }` — **no `exp`**. Revocation is server-side: `authMiddleware` reads the current `User.tokenVersion` on every request and 401s on mismatch. Logout, password change, password reset, and admin-set-password all bump `tokenVersion`.
+- CSRF is mitigated by `SameSite=Strict` on the token cookie + fixed-origin CORS (`credentials: true`, single allowed origin).
 
 ### Frontend API Client
-`src/lib/api.js` is the single source for all backend calls. It auto-attaches the JWT from `localStorage`/`sessionStorage`, handles 401 by clearing the token and redirecting to `/login`, and throws errors with the backend's `error` field.
-
-**Token storage**: "Remember me" → `localStorage`; session only → `sessionStorage`. Both are checked on each request.
+`src/lib/api.js` is the single source for all backend calls. The JWT lives in the httpOnly cookie set by the server, so the client doesn't read or attach it — `credentials: 'include'` carries it. 401s clear the local `sessionHint` and redirect to `/login`.
 
 ### Production Static File Serving
 In production, Express serves `src/dist/` as static files and catches all non-`/api/*` routes with the SPA fallback. The `build` output directory is `dist/` (relative to the `src/` directory where Vite is run).
@@ -105,11 +105,10 @@ All API routes validate inputs using these patterns:
 
 Required in `.env`:
 - `DATABASE_URL` — PostgreSQL connection string
-- `JWT_SECRET` — used for HS256 token signing (7d expiry)
-- `HEALTH_SYNC_TOKEN` — shared token for Apple Health sync endpoint
+- `JWT_SECRET` — used for HS256 token signing. Must be ≥ 32 chars in production (boot validation enforces this).
 - `FATSECRET_CONSUMER_KEY` — OAuth 1.0a consumer key for FatSecret food search API
 - `FATSECRET_CONSUMER_SECRET` — OAuth 1.0a shared secret for FatSecret food search API
-- `CORS_ORIGIN` — defaults to `http://localhost:5173`
+- `CORS_ORIGIN` — defaults to `http://localhost:5173` in dev. Required in production (boot fails if unset).
 - `PORT` — defaults to `3001`
 
 ## Database
@@ -118,4 +117,5 @@ Required in `.env`:
 - Schema: `db/schema.prisma`
 - All models use CUID for IDs
 - `WorkoutSession.exercises` and `CustomExercise.muscles` are stored as `Json` (no separate join table)
-- `HealthData` has a `@@unique([userId, date])` constraint — sync uses `upsert`
+- `HealthData` has a `@@unique([userId, date])` constraint
+- `AdminAuditLog` records role changes, password resets, and deletes performed by admins (PR `security/audit-remediation`)

@@ -1,6 +1,6 @@
 # healthtrkr
 
-A personal web-based fitness tracker with calorie/protein logging, workout tracking, Apple Watch data sync, and weekly progress charts. Built with React, Express, PostgreSQL, and Prisma while leveraging Claude Code.
+A personal web-based fitness tracker with calorie/protein logging, workout tracking, and weekly progress charts. Built with React, Express, PostgreSQL, and Prisma while leveraging Claude Code.
 
 ---
 
@@ -33,7 +33,6 @@ DATABASE_URL="postgresql://postgres:your-password@localhost:5432/healthtrkr"
 JWT_SECRET="generate-a-long-random-string-here"
 PORT=3001
 VITE_API_URL=http://localhost:3001
-HEALTH_SYNC_TOKEN="generate-another-long-random-string-here"
 CORS_ORIGIN=http://localhost:5173
 
 # Optional — needed only if you want to re-seed the food database from USDA
@@ -46,7 +45,7 @@ EMAILJS_PUBLIC_KEY=your-public-key
 EMAILJS_PRIVATE_KEY=your-private-key
 ```
 
-> **Generating secrets:** use `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` to generate strong random values for `JWT_SECRET` and `HEALTH_SYNC_TOKEN`.
+> **Generating secrets:** use `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` to generate a strong random value for `JWT_SECRET`.
 
 ```bash
 # 4. Create the database (if it doesn't exist)
@@ -101,62 +100,6 @@ Open your browser at **`http://localhost:5173`** (or your WSL2 IP if accessing f
 
 ---
 
-## Finding Your User ID
-
-Your user ID is returned at login and is needed for the Apple Watch sync setup.
-
-```bash
-curl -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"yourpassword"}'
-```
-
-The response includes `user.id` — copy that value.
-
----
-
-## Apple Watch Integration (Health Auto Export)
-
-healthtrkr ingests Apple Watch data using the **Health Auto Export** iOS app (~$4 one-time, App Store).
-
-### Setup
-
-1. Install **Health Auto Export** on your iPhone
-2. Open the app → tap **+** → choose **REST API**
-3. Set the **Endpoint URL** to:
-   ```
-   http://YOUR-WSL-IP:3001/api/health/sync
-   ```
-   Replace `YOUR-WSL-IP` with the output of `hostname -I` (e.g. `172.23.1.198`).
-   For remote access, use your public domain/IP.
-
-4. Add these **Custom Headers**:
-   | Header | Value |
-   |---|---|
-   | `x-sync-token` | The value of `HEALTH_SYNC_TOKEN` from your `.env` |
-   | `x-user-id` | Your healthtrkr user ID (see above) |
-
-5. Select these **Metrics** to export:
-   - Active Energy
-   - Basal Energy Burned
-   - Step Count
-   - Heart Rate
-
-6. Set **Export Frequency** to: `Automatic (when data changes)`
-
-7. Tap **Export** once to test — you should see active calories appear on the Dashboard.
-
-### Verifying Sync
-
-```bash
-curl http://localhost:3001/api/health/today \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-Should return today's active calories, steps, and resting calories if a sync has occurred.
-
----
-
 ## Adding a Second User
 
 Just register a new account at `/login` (Register tab). Each user has fully isolated data.
@@ -198,7 +141,7 @@ On the server — only two files needed, no source code:
 
 ```bash
 # 1. Copy docker-compose.deploy.yml and create .env
-nano .env          # set DATA, POSTGRES_PASSWORD, JWT_SECRET, HEALTH_SYNC_TOKEN, CORS_ORIGIN
+nano .env          # set DATA, POSTGRES_PASSWORD, JWT_SECRET, CORS_ORIGIN
 
 # 2. Pull and start
 docker compose -f docker-compose.deploy.yml pull
