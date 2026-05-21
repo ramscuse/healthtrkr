@@ -236,15 +236,28 @@ router.post('/reset-password', async (req, res, next) => {
     }
 
     // Mark token used, update password, bump tokenVersion to invalidate any
-    // other active sessions for this user.
+    // other active sessions for this user. Token consumption is conditional
+    // on `used: false` + still-fresh `expiresAt` so two concurrent requests
+    // that both passed the bcrypt check can't both spend the code: only the
+    // first claim wins (count === 1); the loser sees count === 0 and aborts
+    // before the password is rewritten.
     const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    await prisma.$transaction([
-      prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { used: true } }),
-      prisma.user.update({
+    const claimed = await prisma.$transaction(async (tx) => {
+      const result = await tx.passwordResetToken.updateMany({
+        where: { id: resetToken.id, used: false, expiresAt: { gt: new Date() } },
+        data: { used: true },
+      });
+      if (result.count !== 1) return false;
+      await tx.user.update({
         where: { id: user.id },
         data: { password: hashed, tokenVersion: { increment: 1 } },
-      }),
-    ]);
+      });
+      return true;
+    });
+
+    if (!claimed) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
 
     res.json({ message: 'Password reset successfully.' });
   } catch (err) {

@@ -122,7 +122,7 @@ router.put('/users/:id', async (req, res, next) => {
         async (tx) => {
           const target = await tx.user.findUnique({
             where: { id: req.params.id },
-            select: { id: true, name: true, role: true, darkMode: true },
+            select: { id: true, email: true, name: true, role: true, darkMode: true },
           })
           if (!target) {
             const err = new Error('User not found')
@@ -146,7 +146,10 @@ router.put('/users/:id', async (req, res, next) => {
           })
 
           // Capture only the fields that actually changed so the audit row
-          // tells a reviewer "what did this admin alter" at a glance.
+          // tells a reviewer "what did this admin alter" at a glance. Identity
+          // (`actor`/`target` blocks) is snapshotted alongside the diff so the
+          // row remains self-describing after either FK is null-ed out by a
+          // later user delete.
           const before = {}
           const after = {}
           for (const key of Object.keys(data)) {
@@ -157,12 +160,20 @@ router.put('/users/:id', async (req, res, next) => {
           }
           const action = 'role' in after ? 'ROLE_CHANGE' : 'PROFILE_UPDATE'
           if (Object.keys(after).length > 0) {
+            const actor = await tx.user.findUnique({
+              where: { id: actorId },
+              select: { email: true, name: true },
+            })
             await tx.adminAuditLog.create({
               data: {
                 adminId: actorId,
                 targetUserId: target.id,
                 action,
-                before,
+                before: {
+                  ...before,
+                  actor: actor ? { email: actor.email, name: actor.name } : null,
+                  target: { email: target.email, name: target.name, role: target.role },
+                },
                 after,
               },
             })
@@ -198,13 +209,17 @@ router.put('/users/:id/password', async (req, res, next) => {
 
     const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS)
     const actorId = req.user.userId
+    const actor = await prisma.user.findUnique({
+      where: { id: actorId },
+      select: { email: true, name: true },
+    })
 
     // Atomically rotate the password, bump tokenVersion to invalidate any
     // active sessions for the target user, invalidate outstanding self-serve
     // reset tokens so a stale 6-digit code can't still be redeemed, and
-    // record the admin action. Identity is snapshotted into `before` so the
-    // audit row stays readable even if the target is later deleted (SetNull
-    // FK clears `targetUserId`).
+    // record the admin action. Both actor and target identity are snapshotted
+    // into `before` so the audit row stays readable even if either user is
+    // later deleted (SetNull FKs clear adminId/targetUserId).
     await prisma.$transaction([
       prisma.user.update({
         where: { id: target.id },
@@ -219,7 +234,10 @@ router.put('/users/:id/password', async (req, res, next) => {
           adminId: actorId,
           targetUserId: target.id,
           action: 'PASSWORD_RESET',
-          before: { email: target.email, name: target.name },
+          before: {
+            actor: actor ? { email: actor.email, name: actor.name } : null,
+            target: { email: target.email, name: target.name },
+          },
         },
       }),
     ])
@@ -262,14 +280,22 @@ router.delete('/users/:id', async (req, res, next) => {
               throw err
             }
           }
-          // Capture identity in `before` so the log row stays meaningful once
-          // the target FK is null-ed out by the cascade SetNull.
+          // Capture actor + target identity in `before` so the log row stays
+          // meaningful once the target FK is null-ed out by the cascade
+          // SetNull (and the adminId FK, if the acting admin is later deleted).
+          const actor = await tx.user.findUnique({
+            where: { id: actorId },
+            select: { email: true, name: true },
+          })
           await tx.adminAuditLog.create({
             data: {
               adminId: actorId,
               targetUserId: target.id,
               action: 'DELETE',
-              before: { email: target.email, name: target.name, role: target.role },
+              before: {
+                actor: actor ? { email: actor.email, name: actor.name } : null,
+                target: { email: target.email, name: target.name, role: target.role },
+              },
             },
           })
           await tx.user.delete({ where: { id: target.id } })

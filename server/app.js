@@ -49,7 +49,9 @@ app.use('/api/workouts', authMiddleware, apiLimiter, workoutsRouter);
 app.use('/api/health', authMiddleware, apiLimiter, healthRouter);
 app.use('/api/progress', authMiddleware, apiLimiter, progressRouter);
 app.use('/api/water', authMiddleware, apiLimiter, waterRouter);
-app.use('/api/admin', authMiddleware, requireAdmin, apiLimiter, adminRouter);
+// apiLimiter runs before requireAdmin so a non-admin spamming /api/admin/*
+// consumes their bucket (403s) instead of getting unbounded free 403s.
+app.use('/api/admin', authMiddleware, apiLimiter, requireAdmin, adminRouter);
 
 if (process.env.NODE_ENV === 'production') {
   // Docker/Proxmox path only — on Vercel, static files are served before this

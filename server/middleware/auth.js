@@ -32,7 +32,11 @@ export async function authMiddleware(req, res, next) {
   // adjacent service sharing the secret). Guarding the types up front means
   // a missing userId doesn't blow up `findUnique({ where: { id: undefined } })`
   // into a Prisma validation error / 500.
-  if (typeof payload.userId !== 'string' || !Number.isInteger(payload.tokenVersion)) {
+  if (
+    typeof payload.userId !== 'string' ||
+    !Number.isInteger(payload.tokenVersion) ||
+    !Number.isInteger(payload.iat)
+  ) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 

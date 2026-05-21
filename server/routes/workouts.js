@@ -17,6 +17,7 @@ const VALID_SPLIT_DAYS = ['upper_push', 'lower_core', 'upper_pull', 'lower', 'ca
 
 const MAX_EXERCISES = 50;
 const MAX_EXERCISE_NAME_LEN = 200;
+const MAX_SETS_PER_EXERCISE = 30;
 const MAX_NOTES_LEN = 2000;
 
 // Validates the shape of an exercises[] entry. The frontend submits
@@ -36,6 +37,17 @@ function validateExercise(ex, idx) {
   }
   if (ex.muscles !== undefined && !Array.isArray(ex.muscles)) {
     return `exercises[${idx}].muscles must be an array if provided`;
+  }
+  // Cap nested sets[] so the outer 50-exercise limit + 100KB body limit aren't
+  // the only ceiling on payload size — a single exercise with thousands of
+  // sets would otherwise still fit under both.
+  if (ex.sets !== undefined && ex.sets !== null) {
+    if (!Array.isArray(ex.sets)) {
+      return `exercises[${idx}].sets must be an array if provided`;
+    }
+    if (ex.sets.length > MAX_SETS_PER_EXERCISE) {
+      return `exercises[${idx}].sets must have ${MAX_SETS_PER_EXERCISE} or fewer entries`;
+    }
   }
   return null;
 }
