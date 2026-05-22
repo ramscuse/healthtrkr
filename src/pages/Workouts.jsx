@@ -119,12 +119,16 @@ export default function Workouts() {
   const quickError = quickClientError || (quickLogMutation.error && quickLogMutation.error.message) || ''
 
   const exSaving = createCustomExerciseMutation.isPending
-  const exError = exClientError || (createCustomExerciseMutation.error && createCustomExerciseMutation.error.message) || ''
+  const exError = exClientError
+    || (createCustomExerciseMutation.error && createCustomExerciseMutation.error.message)
+    || (deleteCustomExerciseMutation.error && deleteCustomExerciseMutation.error.message)
+    || ''
 
   const presetSaving = createWorkoutPresetMutation.isPending || updateWorkoutPresetMutation.isPending
   const presetError = presetClientError
     || (createWorkoutPresetMutation.error && createWorkoutPresetMutation.error.message)
     || (updateWorkoutPresetMutation.error && updateWorkoutPresetMutation.error.message)
+    || (deleteWorkoutPresetMutation.error && deleteWorkoutPresetMutation.error.message)
     || ''
 
   const saveAsPresetSaving = saveAsPresetMutation.isPending

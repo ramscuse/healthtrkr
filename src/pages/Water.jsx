@@ -46,7 +46,10 @@ export default function Water() {
 
   const adding = logWaterMutation.isPending
   const goalSaving = updateGoalsMutation.isPending
-  const addError = addClientError || (logWaterMutation.error && logWaterMutation.error.message) || ''
+  const addError = addClientError
+    || (logWaterMutation.error && logWaterMutation.error.message)
+    || (deleteWaterMutation.error && deleteWaterMutation.error.message)
+    || ''
   const goalError = goalClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || ''
 
   function handleAdd(amount) {

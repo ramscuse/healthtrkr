@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { logout } from '../lib/api.js'
 import { useUser } from '../context/UserContext.jsx'
 
@@ -71,6 +72,7 @@ const adminNavItem = { to: '/admin', label: 'Admin', mobileLabel: 'Admin', Icon:
 
 export default function Layout({ children }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { user } = useUser()
 
   const isAdmin = user?.role === 'admin'
@@ -79,6 +81,9 @@ export default function Layout({ children }) {
 
   async function handleLogout() {
     try { await logout() } catch { /* ignore */ }
+    // Drop the previous session's cached data so a same-tab login doesn't
+    // briefly show stale account/meals/water/progress for the prior user.
+    queryClient.clear()
     navigate('/login')
   }
 

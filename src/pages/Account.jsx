@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { changePassword, logout } from '../lib/api.js'
 import { useAccount } from '../hooks/useAccount.js'
 import { useGoals, useUpdateGoals } from '../hooks/useGoals.js'
@@ -8,6 +9,7 @@ import { useDarkMode } from '../context/ThemeContext.jsx'
 export default function Account() {
   const { darkMode, toggleDarkMode } = useDarkMode()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const accountQuery = useAccount()
   const goalsQuery = useGoals()
@@ -93,6 +95,7 @@ export default function Account() {
 
   async function handleLogout() {
     try { await logout() } catch { /* ignore */ }
+    queryClient.clear()
     navigate('/login')
   }
 

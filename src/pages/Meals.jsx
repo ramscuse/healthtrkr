@@ -212,19 +212,28 @@ export default function Meals() {
   const updatePresetMutation = useUpdateMealPreset()
   const deletePresetMutation = useDeleteMealPreset()
   const updateGoalsMutation = useUpdateGoals()
+  // Separate instance for the "Save current meal as Preset" inline form so
+  // its isPending state doesn't collide with the preset editor.
+  const saveAsPresetMutation = useCreateMealPreset()
 
   // ── Derived from queries ──
   const meals = mealsQuery.data
   const loading = mealsQuery.isPending
-  const error = notice || (mealsQuery.error && mealsQuery.error.message) || ''
+  const error = notice
+    || (mealsQuery.error && mealsQuery.error.message)
+    || (deleteMealMutation.error && deleteMealMutation.error.message)
+    || ''
   const customFoods = customFoodsQuery.data || []
   const presets = presetsQuery.data || []
   const goals = goalsQuery.data
 
   const searchResults = searchResultsQuery.data?.foods || []
   const searchLoading = searchResultsQuery.isFetching
+  // The delete-custom-food button lives in the search panel, so its error
+  // surfaces here rather than in the custom-food editor.
   const searchError = searchClientError
     || (searchResultsQuery.error && searchResultsQuery.error.message)
+    || (deleteCustomFoodMutation.error && deleteCustomFoodMutation.error.message)
     || ''
 
   const presetSearchResults = presetSearchResultsQuery.data?.foods || []
@@ -637,15 +646,15 @@ export default function Meals() {
     const valid = items.filter(it => it.servingId)
     const dropped = items.length - valid.length
     if (valid.length === 0) {
-      setSaveAsMeal(prev => ({ ...prev, saving: false, error: 'No items reference a saved food — cannot save as preset.' }))
+      setSaveAsMeal(prev => ({ ...prev, error: 'No items reference a saved food — cannot save as preset.' }))
       return
     }
-    setSaveAsMeal(prev => ({ ...prev, saving: true, error: '' }))
+    setSaveAsMeal(prev => ({ ...prev, error: '' }))
     const payload = {
       name,
       items: valid.map(it => ({ servingId: it.servingId, quantity: it.quantity ?? 1 })),
     }
-    createPresetMutation.mutate(payload, {
+    saveAsPresetMutation.mutate(payload, {
       onSuccess: () => {
         setSaveAsMeal(null)
         if (dropped > 0) {
@@ -655,7 +664,7 @@ export default function Meals() {
         }
       },
       onError: (err) => {
-        setSaveAsMeal(prev => ({ ...prev, saving: false, error: err.message || 'Failed to save preset.' }))
+        setSaveAsMeal(prev => ({ ...prev, error: err.message || 'Failed to save preset.' }))
       },
     })
   }
@@ -1545,7 +1554,7 @@ export default function Meals() {
                   </button>
                   {items.length > 0 && saveAsMeal?.mealType !== mealType && (
                     <button
-                      onClick={() => setSaveAsMeal({ mealType, name: '', saving: false, error: '' })}
+                      onClick={() => setSaveAsMeal({ mealType, name: '', error: '' })}
                       className="text-sm font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors ml-auto"
                     >
                       Save as Preset
@@ -1568,10 +1577,10 @@ export default function Meals() {
                       />
                       <button
                         onClick={() => handleSaveMealAsPreset(items)}
-                        disabled={saveAsMeal.saving || !saveAsMeal.name.trim()}
+                        disabled={saveAsPresetMutation.isPending || !saveAsMeal.name.trim()}
                         className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
                       >
-                        {saveAsMeal.saving ? <Spinner /> : 'Save'}
+                        {saveAsPresetMutation.isPending ? <Spinner /> : 'Save'}
                       </button>
                       <button
                         onClick={() => setSaveAsMeal(null)}
