@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getProgressSummary, getWaterToday, getGoals, logWater, updateActiveCalories } from '../lib/api.js'
-import StatCard from '../components/StatCard.jsx'
+import { useProgressSummary } from '../hooks/useProgress.js'
+import { useWaterToday, useLogWater } from '../hooks/useWater.js'
+import { useGoals } from '../hooks/useGoals.js'
+import { useUpdateActiveCalories } from '../hooks/useHealth.js'
 
 function getTodayString() {
   const now = new Date()
@@ -26,37 +28,22 @@ function getCalorieColor(consumed, min, max) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const today = getTodayString()
-  const [summary, setSummary] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [water, setWater]             = useState({ total: 0 })
-  const [waterAdding, setWaterAdding] = useState(false)
-  const [goals, setGoals]             = useState({})
+
+  const summaryQuery = useProgressSummary(today)
+  const waterQuery = useWaterToday()
+  const goalsQuery = useGoals()
+  const logWaterMutation = useLogWater()
+  const updateActiveCal = useUpdateActiveCalories()
 
   const [activeCalEditing, setActiveCalEditing] = useState(false)
-  const [activeCalInput, setActiveCalInput]     = useState('')
-  const [activeCalSaving, setActiveCalSaving]   = useState(false)
-  const [activeCalError, setActiveCalError]     = useState('')
+  const [activeCalInput, setActiveCalInput] = useState('')
+  const [activeCalClientError, setActiveCalClientError] = useState('')
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [data, waterData, goalsData] = await Promise.all([
-          getProgressSummary(today),
-          getWaterToday(),
-          getGoals(),
-        ])
-        setSummary(data)
-        setWater(waterData || { total: 0 })
-        setGoals(goalsData || {})
-      } catch (err) {
-        setError(err.message || 'Failed to load dashboard data.')
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [today])
+  const loading = summaryQuery.isPending || waterQuery.isPending || goalsQuery.isPending
+  const error =
+    (summaryQuery.error && summaryQuery.error.message) ||
+    (waterQuery.error && waterQuery.error.message) ||
+    (goalsQuery.error && goalsQuery.error.message)
 
   if (loading) {
     return (
@@ -74,6 +61,10 @@ export default function Dashboard() {
     )
   }
 
+  const summary = summaryQuery.data
+  const water = waterQuery.data || { total: 0 }
+  const goals = goalsQuery.data || {}
+
   const { consumed = {}, burned = {}, net = 0, deficit = 0, workoutLogged = false } = summary || {}
 
   const calorieColor = getCalorieColor(consumed.calories || 0, goals.calorieMin || 0, goals.calorieMax || 0)
@@ -83,35 +74,24 @@ export default function Dashboard() {
     ? Math.round(burned.active).toString()
     : '—'
 
+  const activeCalError = activeCalClientError || (updateActiveCal.error && updateActiveCal.error.message) || ''
+  const activeCalSaving = updateActiveCal.isPending
+  const waterAdding = logWaterMutation.isPending
+
   const mealTypes = ['breakfast', 'lunch', 'dinner', 'snack']
 
-  async function handleSaveActiveCal() {
+  function handleSaveActiveCal() {
     const n = parseFloat(activeCalInput)
-    if (!n || n < 0) { setActiveCalError('Enter a valid number.'); return }
-    setActiveCalSaving(true); setActiveCalError('')
-    try {
-      await updateActiveCalories(today, n)
-      setSummary(prev => ({
-        ...prev,
-        burned: { ...prev.burned, active: n, total: n + (prev.burned?.resting ?? 0) },
-        net: (prev.consumed?.calories ?? 0) - n,
-        deficit: (goals.calorieMax ?? 0) - ((prev.consumed?.calories ?? 0) - n),
-      }))
-      setActiveCalEditing(false)
-    } catch (err) {
-      setActiveCalError(err.message || 'Failed to save.')
-    } finally {
-      setActiveCalSaving(false)
-    }
+    if (!n || n < 0) { setActiveCalClientError('Enter a valid number.'); return }
+    setActiveCalClientError('')
+    updateActiveCal.mutate(
+      { date: today, calories: n },
+      { onSuccess: () => setActiveCalEditing(false) },
+    )
   }
 
-  async function handleQuickWater(oz) {
-    setWaterAdding(true)
-    try {
-      await logWater({ date: today, amount: oz })
-      setWater(prev => ({ ...prev, total: (prev.total || 0) + oz }))
-    } catch { /* swallow */ }
-    finally { setWaterAdding(false) }
+  function handleQuickWater(oz) {
+    logWaterMutation.mutate({ date: today, amount: oz })
   }
 
   return (
@@ -165,7 +145,7 @@ export default function Dashboard() {
             {!activeCalEditing && (
               <button
                 type="button"
-                onClick={() => { setActiveCalInput(burned.active > 0 ? String(Math.round(burned.active)) : ''); setActiveCalEditing(true); setActiveCalError('') }}
+                onClick={() => { setActiveCalInput(burned.active > 0 ? String(Math.round(burned.active)) : ''); setActiveCalEditing(true); setActiveCalClientError('') }}
                 className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
               >
                 {burned.active > 0 ? 'Edit' : 'Log'}
@@ -179,7 +159,7 @@ export default function Dashboard() {
                   type="number"
                   min="0"
                   value={activeCalInput}
-                  onChange={e => { setActiveCalInput(e.target.value); setActiveCalError('') }}
+                  onChange={e => { setActiveCalInput(e.target.value); setActiveCalClientError('') }}
                   onKeyDown={e => e.key === 'Enter' && handleSaveActiveCal()}
                   placeholder="kcal"
                   inputMode="numeric"
@@ -191,7 +171,7 @@ export default function Dashboard() {
                   className="text-xs font-semibold text-white bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 rounded-lg px-2 py-1 transition-colors">
                   {activeCalSaving ? '…' : 'Save'}
                 </button>
-                <button type="button" onClick={() => { setActiveCalEditing(false); setActiveCalError('') }}
+                <button type="button" onClick={() => { setActiveCalEditing(false); setActiveCalClientError('') }}
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors">✕</button>
               </div>
               {activeCalError && <p className="text-xs text-red-500">{activeCalError}</p>}
