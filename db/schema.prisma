@@ -9,13 +9,16 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  darkMode  Boolean  @default(false)
-  role      String   @default("user")
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String
+  name         String
+  darkMode     Boolean  @default(false)
+  role         String   @default("user")
+  // Bumped on logout, password change, password reset, and admin-set password.
+  // JWTs carry the version they were issued with; auth middleware 401s on mismatch.
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
 
   goals               Goals?
   meals               MealEntry[]
@@ -27,6 +30,8 @@ model User {
   workoutPresets      WorkoutPreset[]
   waterEntries        WaterEntry[]
   passwordResetTokens PasswordResetToken[]
+  adminAuditEntries   AdminAuditLog[]      @relation("AdminActor")
+  targetedAuditEntries AdminAuditLog[]     @relation("AdminTarget")
 }
 
 model PasswordResetToken {
@@ -36,7 +41,28 @@ model PasswordResetToken {
   token     String
   expiresAt DateTime
   used      Boolean  @default(false)
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
+}
+
+// Forensic record of admin actions. Both FKs are SetNull + nullable so the row
+// survives when either the admin or target user is later deleted — losing the
+// log when an account is deleted would defeat the point. Identifying info
+// (email/name) is captured in `before` for DELETE actions to keep the entry
+// readable after the target row is gone.
+model AdminAuditLog {
+  id           String   @id @default(cuid())
+  adminId      String?
+  admin        User?    @relation("AdminActor", fields: [adminId], references: [id], onDelete: SetNull)
+  targetUserId String?
+  target       User?    @relation("AdminTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  action       String
+  before       Json?
+  after        Json?
+  createdAt    DateTime @default(now())
+
+  @@index([targetUserId, createdAt])
+  @@index([adminId, createdAt])
 }
 
 model Goals {

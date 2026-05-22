@@ -35,7 +35,6 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/healthtrkr
       JWT_SECRET: ${JWT_SECRET}
-      HEALTH_SYNC_TOKEN: ${HEALTH_SYNC_TOKEN}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
       EMAILJS_SERVICE_ID: ${EMAILJS_SERVICE_ID:-}
       EMAILJS_TEMPLATE_ID: ${EMAILJS_TEMPLATE_ID:-}

@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import prisma from '../../lib/prisma.js'
+import { validatePassword } from '../lib/passwordPolicy.js'
 
 const router = Router()
 const SALT_ROUNDS = 12
@@ -50,6 +51,32 @@ router.get('/users/:id', async (req, res, next) => {
   }
 })
 
+// GET /api/admin/audit — paginated admin action log
+router.get('/audit', async (req, res, next) => {
+  try {
+    const { targetUserId, adminId } = req.query
+    const rawLimit = parseInt(req.query.limit, 10)
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 200) : 50
+
+    const where = {}
+    if (typeof targetUserId === 'string') where.targetUserId = targetUserId
+    if (typeof adminId === 'string') where.adminId = adminId
+
+    const entries = await prisma.adminAuditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        admin: { select: { id: true, email: true, name: true } },
+        target: { select: { id: true, email: true, name: true } },
+      },
+    })
+    res.json(entries)
+  } catch (err) {
+    next(err)
+  }
+})
+
 // PUT /api/admin/users/:id — update name / role / darkMode
 router.put('/users/:id', async (req, res, next) => {
   try {
@@ -85,6 +112,8 @@ router.put('/users/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'No editable fields provided' })
     }
 
+    const actorId = req.user.userId
+
     // Read target inside the transaction so the last-admin check operates on
     // the same snapshot as the update — prevents a concurrent demotion from
     // making `target.role` stale and slipping past the guard.
@@ -93,7 +122,7 @@ router.put('/users/:id', async (req, res, next) => {
         async (tx) => {
           const target = await tx.user.findUnique({
             where: { id: req.params.id },
-            select: { id: true, role: true },
+            select: { id: true, email: true, name: true, role: true, darkMode: true },
           })
           if (!target) {
             const err = new Error('User not found')
@@ -110,11 +139,55 @@ router.put('/users/:id', async (req, res, next) => {
             }
           }
 
-          return tx.user.update({
+          // Snapshot the actor BEFORE the update — otherwise a self-edit
+          // (actorId === target.id) would record the post-update name in
+          // `before.actor`, leaving the audit row internally inconsistent.
+          // Reuse the target read for self-edits to save a roundtrip.
+          const actor =
+            actorId === target.id
+              ? { email: target.email, name: target.name }
+              : await tx.user.findUnique({
+                  where: { id: actorId },
+                  select: { email: true, name: true },
+                })
+
+          const updatedUser = await tx.user.update({
             where: { id: target.id },
             data,
             select: USER_SELECT,
           })
+
+          // Capture only the fields that actually changed so the audit row
+          // tells a reviewer "what did this admin alter" at a glance. Identity
+          // (`actor`/`target` blocks) is snapshotted alongside the diff so the
+          // row remains self-describing after either FK is null-ed out by a
+          // later user delete.
+          const before = {}
+          const after = {}
+          for (const key of Object.keys(data)) {
+            if (target[key] !== data[key]) {
+              before[key] = target[key]
+              after[key] = data[key]
+            }
+          }
+          const action = 'role' in after ? 'ROLE_CHANGE' : 'PROFILE_UPDATE'
+          if (Object.keys(after).length > 0) {
+            await tx.adminAuditLog.create({
+              data: {
+                adminId: actorId,
+                targetUserId: target.id,
+                action,
+                before: {
+                  ...before,
+                  actor: actor ? { email: actor.email, name: actor.name } : null,
+                  target: { email: target.email, name: target.name, role: target.role },
+                },
+                after,
+              },
+            })
+          }
+
+          return updatedUser
         },
         { isolationLevel: 'Serializable' },
       )
@@ -133,27 +206,47 @@ router.put('/users/:id', async (req, res, next) => {
 router.put('/users/:id/password', async (req, res, next) => {
   try {
     const { newPassword } = req.body
-    if (typeof newPassword !== 'string' || newPassword.length < 6) {
-      return res.status(400).json({ error: 'newPassword must be at least 6 characters' })
-    }
+    const passwordError = validatePassword(newPassword)
+    if (passwordError) return res.status(400).json({ error: passwordError })
 
     const target = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { id: true },
+      select: { id: true, email: true, name: true },
     })
     if (!target) return res.status(404).json({ error: 'User not found' })
 
     const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS)
-    // Atomically rotate the password and invalidate any outstanding self-serve
-    // reset tokens so a stale 6-digit code can't still be redeemed.
+    const actorId = req.user.userId
+    const actor = await prisma.user.findUnique({
+      where: { id: actorId },
+      select: { email: true, name: true },
+    })
+
+    // Atomically rotate the password, bump tokenVersion to invalidate any
+    // active sessions for the target user, invalidate outstanding self-serve
+    // reset tokens so a stale 6-digit code can't still be redeemed, and
+    // record the admin action. Both actor and target identity are snapshotted
+    // into `before` so the audit row stays readable even if either user is
+    // later deleted (SetNull FKs clear adminId/targetUserId).
     await prisma.$transaction([
       prisma.user.update({
         where: { id: target.id },
-        data: { password: hashed },
+        data: { password: hashed, tokenVersion: { increment: 1 } },
       }),
       prisma.passwordResetToken.updateMany({
         where: { userId: target.id, used: false },
         data: { used: true },
+      }),
+      prisma.adminAuditLog.create({
+        data: {
+          adminId: actorId,
+          targetUserId: target.id,
+          action: 'PASSWORD_RESET',
+          before: {
+            actor: actor ? { email: actor.email, name: actor.name } : null,
+            target: { email: target.email, name: target.name },
+          },
+        },
       }),
     ])
 
@@ -170,6 +263,8 @@ router.delete('/users/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'Admins cannot delete their own account' })
     }
 
+    const actorId = req.user.userId
+
     // Read target inside the transaction so the last-admin check sees the
     // same snapshot as the delete (a concurrent demote-then-delete pair would
     // otherwise both observe a stale role and could empty the admin set).
@@ -178,7 +273,7 @@ router.delete('/users/:id', async (req, res, next) => {
         async (tx) => {
           const target = await tx.user.findUnique({
             where: { id: req.params.id },
-            select: { id: true, role: true },
+            select: { id: true, email: true, name: true, role: true },
           })
           if (!target) {
             const err = new Error('User not found')
@@ -193,6 +288,24 @@ router.delete('/users/:id', async (req, res, next) => {
               throw err
             }
           }
+          // Capture actor + target identity in `before` so the log row stays
+          // meaningful once the target FK is null-ed out by the cascade
+          // SetNull (and the adminId FK, if the acting admin is later deleted).
+          const actor = await tx.user.findUnique({
+            where: { id: actorId },
+            select: { email: true, name: true },
+          })
+          await tx.adminAuditLog.create({
+            data: {
+              adminId: actorId,
+              targetUserId: target.id,
+              action: 'DELETE',
+              before: {
+                actor: actor ? { email: actor.email, name: actor.name } : null,
+                target: { email: target.email, name: target.name, role: target.role },
+              },
+            },
+          })
           await tx.user.delete({ where: { id: target.id } })
         },
         { isolationLevel: 'Serializable' },
