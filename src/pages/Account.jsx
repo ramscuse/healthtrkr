@@ -41,9 +41,9 @@ export default function Account() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
+  const [pwdSaving, setPwdSaving] = useState(false)
+  const [pwdError, setPwdError] = useState('')
+  const [pwdSuccess, setPwdSuccess] = useState(false)
 
   const goalsSaving = updateGoalsMutation.isPending
   const goalsError = goalsClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || ''
@@ -67,29 +67,29 @@ export default function Account() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setError('')
-    setSuccess(false)
+    setPwdError('')
+    setPwdSuccess(false)
 
     if (next !== confirm) {
-      setError('New passwords do not match.')
+      setPwdError('New passwords do not match.')
       return
     }
     if (next.length < 6) {
-      setError('New password must be at least 6 characters.')
+      setPwdError('New password must be at least 6 characters.')
       return
     }
 
-    setLoading(true)
+    setPwdSaving(true)
     try {
       await changePassword(current, next)
-      setSuccess(true)
+      setPwdSuccess(true)
       setCurrent('')
       setNext('')
       setConfirm('')
     } catch (err) {
-      setError(err.message || 'Failed to update password.')
+      setPwdError(err.message || 'Failed to update password.')
     } finally {
-      setLoading(false)
+      setPwdSaving(false)
     }
   }
 
@@ -236,14 +236,14 @@ export default function Account() {
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm p-6">
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-5">Change Password</h2>
 
-        {success && (
+        {pwdSuccess && (
           <div className="mb-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 text-green-700 dark:text-green-400 text-sm rounded-lg px-4 py-3">
             Password updated successfully.
           </div>
         )}
-        {error && (
+        {pwdError && (
           <div className="mb-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-400 text-sm rounded-lg px-4 py-3">
-            {error}
+            {pwdError}
           </div>
         )}
 
@@ -289,10 +289,10 @@ export default function Account() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={pwdSaving}
             className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
           >
-            {loading ? 'Updating...' : 'Update Password'}
+            {pwdSaving ? 'Updating...' : 'Update Password'}
           </button>
         </form>
       </div>
