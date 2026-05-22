@@ -1,24 +1,41 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { changePassword, getAccount, getGoals, updateGoals, logout } from '../lib/api.js'
+import { changePassword, logout } from '../lib/api.js'
+import { useAccount } from '../hooks/useAccount.js'
+import { useGoals, useUpdateGoals } from '../hooks/useGoals.js'
 import { useDarkMode } from '../context/ThemeContext.jsx'
 
 export default function Account() {
   const { darkMode, toggleDarkMode } = useDarkMode()
   const navigate = useNavigate()
 
-  // Profile state
-  const [profile, setProfile] = useState(null)
+  const accountQuery = useAccount()
+  const goalsQuery = useGoals()
+  const updateGoalsMutation = useUpdateGoals()
 
-  // Goals state
-  const [goals, setGoals]               = useState(null)
+  const profile = accountQuery.data
+  const goals = goalsQuery.data
+
+  // Goals form state — local because it's edit-buffer, not server state.
   const [goalsEditing, setGoalsEditing] = useState(false)
-  const [goalsForm, setGoalsForm]       = useState({})
-  const [goalsSaving, setGoalsSaving]   = useState(false)
-  const [goalsError, setGoalsError]     = useState('')
-  const [goalsSaved, setGoalsSaved]     = useState(false)
+  const [goalsForm, setGoalsForm] = useState({})
+  const [goalsClientError, setGoalsClientError] = useState('')
+  const [goalsSaved, setGoalsSaved] = useState(false)
 
-  // Password state
+  // Sync the form buffer to the loaded goals (once they arrive, and again
+  // if the cached goals change from elsewhere).
+  useEffect(() => {
+    if (!goals) return
+    setGoalsForm({
+      calorieMin: goals.calorieMin ?? '',
+      calorieMax: goals.calorieMax ?? '',
+      proteinMin: goals.proteinMin ?? '',
+      proteinMax: goals.proteinMax ?? '',
+      waterGoal:  goals.waterGoal  ?? '',
+    })
+  }, [goals])
+
+  // Password state — direct call (one-shot, not cached).
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -26,38 +43,24 @@ export default function Account() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
-  useEffect(() => {
-    getAccount().then(u => setProfile(u)).catch(() => {})
-    getGoals().then(g => {
-      setGoals(g)
-      setGoalsForm({
-        calorieMin: g.calorieMin ?? '',
-        calorieMax: g.calorieMax ?? '',
-        proteinMin: g.proteinMin ?? '',
-        proteinMax: g.proteinMax ?? '',
-        waterGoal:  g.waterGoal  ?? '',
-      })
-    }).catch(() => {})
-  }, [])
+  const goalsSaving = updateGoalsMutation.isPending
+  const goalsError = goalsClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || ''
 
-  async function handleSaveGoals() {
-    setGoalsSaving(true); setGoalsError(''); setGoalsSaved(false)
-    try {
-      const payload = {}
-      for (const [key, val] of Object.entries(goalsForm)) {
-        const n = Number(val)
-        if (val !== '' && Number.isFinite(n)) payload[key] = n
-      }
-      const updated = await updateGoals(payload)
-      setGoals(updated)
-      setGoalsEditing(false)
-      setGoalsSaved(true)
-      setTimeout(() => setGoalsSaved(false), 2500)
-    } catch (err) {
-      setGoalsError(err.message || 'Failed to save goals.')
-    } finally {
-      setGoalsSaving(false)
+  function handleSaveGoals() {
+    setGoalsClientError('')
+    setGoalsSaved(false)
+    const payload = {}
+    for (const [key, val] of Object.entries(goalsForm)) {
+      const n = Number(val)
+      if (val !== '' && Number.isFinite(n)) payload[key] = n
     }
+    updateGoalsMutation.mutate(payload, {
+      onSuccess: () => {
+        setGoalsEditing(false)
+        setGoalsSaved(true)
+        setTimeout(() => setGoalsSaved(false), 2500)
+      },
+    })
   }
 
   async function handleSubmit(e) {
@@ -121,7 +124,7 @@ export default function Account() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Goals</h2>
           {!goalsEditing ? (
-            <button type="button" onClick={() => { setGoalsEditing(true); setGoalsError('') }}
+            <button type="button" onClick={() => { setGoalsEditing(true); setGoalsClientError('') }}
               className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-300 rounded-lg px-3 py-1.5 transition-colors">
               Edit
             </button>
@@ -133,7 +136,7 @@ export default function Account() {
               </button>
               <button type="button" onClick={() => {
                 setGoalsEditing(false)
-                setGoalsError('')
+                setGoalsClientError('')
                 setGoalsForm({
                   calorieMin: goals?.calorieMin ?? '',
                   calorieMax: goals?.calorieMax ?? '',
@@ -170,7 +173,7 @@ export default function Account() {
                   <input
                     type="number"
                     min="0"
-                    value={goalsForm[key]}
+                    value={goalsForm[key] ?? ''}
                     onChange={e => setGoalsForm(f => ({ ...f, [key]: e.target.value }))}
                     inputMode="numeric"
                     style={{ fontSize: '16px' }}
