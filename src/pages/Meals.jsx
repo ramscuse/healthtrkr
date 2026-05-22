@@ -1,9 +1,22 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { getMeals, searchFood, getFoodDetail, addMeal, deleteMeal,
-         getCustomFoods, createCustomFood, updateCustomFood, deleteCustomFood,
-         getPresets, createPreset, updatePreset, deletePreset, logPreset,
-         getGoals, updateGoals } from '../lib/api.js'
+import { getFoodDetail } from '../lib/api.js'
+import {
+  useMeals,
+  useAddMeal,
+  useDeleteMeal,
+  useCustomFoods,
+  useCreateCustomFood,
+  useUpdateCustomFood,
+  useDeleteCustomFood,
+  useMealPresets,
+  useCreateMealPreset,
+  useUpdateMealPreset,
+  useDeleteMealPreset,
+  useLogPreset,
+  useFoodSearch,
+} from '../hooks/useMeals.js'
+import { useGoals, useUpdateGoals } from '../hooks/useGoals.js'
 
 function getTodayString() {
   const now = new Date()
@@ -139,92 +152,160 @@ export default function Meals() {
   const today = getTodayString()
   const location = useLocation()
 
-  // Page state
+  // ── Page state ──
   const [date, setDate] = useState(today)
-  const [meals, setMeals] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [deletingId, setDeletingId] = useState(null)
-  const [saveAsMeal, setSaveAsMeal] = useState(null) // { mealType, name, saving, error } | null
+  const [notice, setNotice] = useState('') // page-level notice ("X items dropped" etc.)
+  const [saveAsMeal, setSaveAsMeal] = useState(null)
 
-  // Slide-over state
+  // ── Slide-over state ──
   const [slideOver, setSlideOver] = useState({ open: false, mealType: 'breakfast' })
   const [panelMode, setPanelMode] = useState('search')
 
-  // Search panel state
+  // ── Search panel state ──
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchError, setSearchError] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
+  const [searchClientError, setSearchClientError] = useState('')
   const debounceRef = useRef(null)
 
-  // Log panel state — chosen food/serving + quantity
-  const [chosenFood, setChosenFood] = useState(null) // {source, foodName, brandName, servings:[...]}
+  // ── Log panel state ──
+  const [chosenFood, setChosenFood] = useState(null)
   const [chosenServingIdx, setChosenServingIdx] = useState(0)
   const [quantity, setQuantity] = useState(1)
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState('')
+  const [submitClientError, setSubmitClientError] = useState('')
 
-  // Custom foods + custom-food editor state
-  const [customFoods, setCustomFoods] = useState([])
+  // ── Custom-food editor state ──
   const [customFoodForm, setCustomFoodForm] = useState(EMPTY_CUSTOM_FOOD)
-  const [customFoodError, setCustomFoodError] = useState('')
-  const [savingCustomFood, setSavingCustomFood] = useState(false)
-  const [deletingCustomFoodId, setDeletingCustomFoodId] = useState(null)
-  const [customFoodAdvancedOpen, setCustomFoodAdvancedOpen] = useState({}) // { [servingIdx]: bool }
+  const [customFoodClientError, setCustomFoodClientError] = useState('')
+  const [customFoodAdvancedOpen, setCustomFoodAdvancedOpen] = useState({})
 
-  // Preset state
-  const [presets, setPresets] = useState([])
-  const [loggingPresetId, setLoggingPresetId] = useState(null)
-  const [deletingPresetId, setDeletingPresetId] = useState(null)
+  // ── Preset state ──
   const [presetForm, setPresetForm] = useState({ id: null, name: '', items: [] })
   const [presetSearchQuery, setPresetSearchQuery] = useState('')
-  const [presetSearchResults, setPresetSearchResults] = useState([])
-  const [presetSearchLoading, setPresetSearchLoading] = useState(false)
+  const [debouncedPresetSearchQuery, setDebouncedPresetSearchQuery] = useState('')
   const presetDebounceRef = useRef(null)
-  const [presetPickFood, setPresetPickFood] = useState(null)   // chosen food while picking
+  const [presetPickFood, setPresetPickFood] = useState(null)
   const [presetPickServingIdx, setPresetPickServingIdx] = useState(0)
   const [presetPickQuantity, setPresetPickQuantity] = useState(1)
-  const [savingPreset, setSavingPreset] = useState(false)
-  const [presetError, setPresetError] = useState('')
+  const [presetClientError, setPresetClientError] = useState('')
 
-  // Goals state
-  const [goals, setGoals]               = useState(null)
+  // ── Goals state (form buffer) ──
   const [goalsEditing, setGoalsEditing] = useState(false)
-  const [goalsForm, setGoalsForm]       = useState({})
-  const [goalsSaving, setGoalsSaving]   = useState(false)
-  const [goalsError, setGoalsError]     = useState('')
+  const [goalsForm, setGoalsForm] = useState({})
+  const [goalsClientError, setGoalsClientError] = useState('')
 
-  // ─── Loaders ─────────────────────────────────────────────────────────────
-  const loadMeals = useCallback(async (dateStr) => {
-    setLoading(true)
-    setError('')
-    try {
-      const data = await getMeals(dateStr)
-      setMeals(data)
-    } catch (err) {
-      setError(err.message || 'Failed to load meals.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // ── Hooks: reads ──
+  const mealsQuery = useMeals(date)
+  const customFoodsQuery = useCustomFoods()
+  const presetsQuery = useMealPresets()
+  const goalsQuery = useGoals()
+  const searchResultsQuery = useFoodSearch(debouncedSearchQuery)
+  const presetSearchResultsQuery = useFoodSearch(debouncedPresetSearchQuery)
 
-  useEffect(() => { loadMeals(date) }, [date, loadMeals])
+  // ── Hooks: mutations ──
+  const addMealMutation = useAddMeal()
+  const deleteMealMutation = useDeleteMeal()
+  const logPresetMutation = useLogPreset()
+  const createCustomFoodMutation = useCreateCustomFood()
+  const updateCustomFoodMutation = useUpdateCustomFood()
+  const deleteCustomFoodMutation = useDeleteCustomFood()
+  const createPresetMutation = useCreateMealPreset()
+  const updatePresetMutation = useUpdateMealPreset()
+  const deletePresetMutation = useDeleteMealPreset()
+  const updateGoalsMutation = useUpdateGoals()
 
+  // ── Derived from queries ──
+  const meals = mealsQuery.data
+  const loading = mealsQuery.isPending
+  const error = notice || (mealsQuery.error && mealsQuery.error.message) || ''
+  const customFoods = customFoodsQuery.data || []
+  const presets = presetsQuery.data || []
+  const goals = goalsQuery.data
+
+  const searchResults = searchResultsQuery.data?.foods || []
+  const searchLoading = searchResultsQuery.isFetching
+  const searchError = searchClientError
+    || (searchResultsQuery.error && searchResultsQuery.error.message)
+    || ''
+
+  const presetSearchResults = presetSearchResultsQuery.data?.foods || []
+  const presetSearchLoading = presetSearchResultsQuery.isFetching
+
+  // ── Derived from mutations ──
+  const submitting = addMealMutation.isPending
+  const submitError = submitClientError
+    || (addMealMutation.error && addMealMutation.error.message)
+    || ''
+
+  const savingCustomFood = createCustomFoodMutation.isPending || updateCustomFoodMutation.isPending
+  const customFoodError = customFoodClientError
+    || (createCustomFoodMutation.error && createCustomFoodMutation.error.message)
+    || (updateCustomFoodMutation.error && updateCustomFoodMutation.error.message)
+    || ''
+  const deletingCustomFoodId = deleteCustomFoodMutation.isPending
+    ? deleteCustomFoodMutation.variables
+    : null
+
+  const loggingPresetId = logPresetMutation.isPending
+    ? logPresetMutation.variables?.presetId
+    : null
+  const deletingPresetId = deletePresetMutation.isPending
+    ? deletePresetMutation.variables
+    : null
+  const savingPreset = createPresetMutation.isPending || updatePresetMutation.isPending
+  const presetError = presetClientError
+    || (createPresetMutation.error && createPresetMutation.error.message)
+    || (updatePresetMutation.error && updatePresetMutation.error.message)
+    || (deletePresetMutation.error && deletePresetMutation.error.message)
+    || (logPresetMutation.error && logPresetMutation.error.message)
+    || ''
+
+  const deletingId = deleteMealMutation.isPending ? deleteMealMutation.variables : null
+
+  const goalsSaving = updateGoalsMutation.isPending
+  const goalsError = goalsClientError
+    || (updateGoalsMutation.error && updateGoalsMutation.error.message)
+    || ''
+
+  // ── Effects ──
+
+  // Sync goals form buffer to the loaded goals (initial load + external updates).
   useEffect(() => {
-    getGoals().then(g => {
-      setGoals(g)
-      setGoalsForm({
-        calorieMin: g.calorieMin ?? '',
-        calorieMax: g.calorieMax ?? '',
-        proteinMin: g.proteinMin ?? '',
-        proteinMax: g.proteinMax ?? '',
-        carbsGoal:  g.carbsGoal  ?? '',
-        fatGoal:    g.fatGoal    ?? '',
-      })
-    }).catch(() => {})
-  }, [])
+    if (!goals) return
+    setGoalsForm({
+      calorieMin: goals.calorieMin ?? '',
+      calorieMax: goals.calorieMax ?? '',
+      proteinMin: goals.proteinMin ?? '',
+      proteinMax: goals.proteinMax ?? '',
+      carbsGoal:  goals.carbsGoal  ?? '',
+      fatGoal:    goals.fatGoal    ?? '',
+    })
+  }, [goals])
 
+  // Debounce the slide-over search; the actual fetch happens via useFoodSearch.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const trimmed = searchQuery.trim()
+    if (!trimmed) {
+      setDebouncedSearchQuery('')
+      return
+    }
+    debounceRef.current = setTimeout(() => setDebouncedSearchQuery(trimmed), 700)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [searchQuery])
+
+  // Debounce the preset-inline search.
+  useEffect(() => {
+    if (presetDebounceRef.current) clearTimeout(presetDebounceRef.current)
+    const trimmed = presetSearchQuery.trim()
+    if (!trimmed) {
+      setDebouncedPresetSearchQuery('')
+      return
+    }
+    presetDebounceRef.current = setTimeout(() => setDebouncedPresetSearchQuery(trimmed), 500)
+    return () => { if (presetDebounceRef.current) clearTimeout(presetDebounceRef.current) }
+  }, [presetSearchQuery])
+
+  // Deep-link from dashboard quick-add buttons.
   useEffect(() => {
     const openFor = location.state?.openFor
     if (openFor && MEAL_TYPES.includes(openFor) && !loading) {
@@ -234,33 +315,25 @@ export default function Meals() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  const loadUserFoods = useCallback(async () => {
-    try {
-      const [foods, presetList] = await Promise.all([getCustomFoods(), getPresets()])
-      setCustomFoods(foods || [])
-      setPresets(presetList || [])
-    } catch { /* non-critical */ }
-  }, [])
-
-  // ─── Slide-over open/close ──────────────────────────────────────────────
+  // ── Slide-over open/close ──
   function resetPanelState() {
     setSearchQuery('')
-    setSearchResults([])
-    setSearchError('')
+    setDebouncedSearchQuery('')
+    setSearchClientError('')
     setChosenFood(null)
     setChosenServingIdx(0)
     setQuantity(1)
-    setSubmitError('')
+    setSubmitClientError('')
     setCustomFoodForm(EMPTY_CUSTOM_FOOD)
-    setCustomFoodError('')
+    setCustomFoodClientError('')
     setCustomFoodAdvancedOpen({})
     setPresetForm({ id: null, name: '', items: [] })
     setPresetSearchQuery('')
-    setPresetSearchResults([])
+    setDebouncedPresetSearchQuery('')
     setPresetPickFood(null)
     setPresetPickServingIdx(0)
     setPresetPickQuantity(1)
-    setPresetError('')
+    setPresetClientError('')
   }
 
   function openSlideOver(mealType, initialMode = 'search') {
@@ -268,7 +341,7 @@ export default function Meals() {
     setPanelMode(initialMode)
     resetPanelState()
     setSaveAsMeal(null)
-    loadUserFoods()
+    // useCustomFoods + useMealPresets auto-load on mount; no manual fetch.
   }
 
   function closeSlideOver() {
@@ -276,33 +349,20 @@ export default function Meals() {
     resetPanelState()
   }
 
-  // ─── Search ─────────────────────────────────────────────────────────────
+  // ── Search ──
   function handleSearchInput(e) {
-    const q = e.target.value
-    setSearchQuery(q)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!q.trim()) { setSearchResults([]); return }
-    debounceRef.current = setTimeout(async () => {
-      if (q.trim().length < 2) { setSearchResults([]); return }
-      setSearchLoading(true)
-      setSearchError('')
-      try {
-        const data = await searchFood(q)
-        setSearchResults(data?.foods || [])
-      } catch (err) {
-        setSearchResults([])
-        setSearchError(err.message || 'Search failed.')
-      } finally {
-        setSearchLoading(false)
-      }
-    }, 700)
+    setSearchQuery(e.target.value)
+    setSearchClientError('')
+    // The debounce effect transitions searchQuery → debouncedSearchQuery;
+    // useFoodSearch fires when length >= 2 and caches by query.
   }
 
   // Click a search result. Custom foods already include their servings inline;
   // FatSecret search hits are lightweight and need a separate food.get fetch
-  // to materialize the full servings array.
+  // to materialize the full servings array. getFoodDetail is called directly
+  // (imperative, one-shot) rather than via a hook.
   async function pickFoodForLog(food) {
-    setSubmitError('')
+    setSubmitClientError('')
     if (food.source === 'fatsecret' && (!food.servings || food.servings.length === 0)) {
       try {
         const detail = await getFoodDetail(food.fatSecretFoodId)
@@ -311,7 +371,7 @@ export default function Meals() {
         setChosenFood(chosen)
         setChosenServingIdx(defaultServingIdx(chosen.servings))
       } catch (err) {
-        setSearchError(err.message || 'Failed to load food details.')
+        setSearchClientError(err.message || 'Failed to load food details.')
         return
       }
     } else {
@@ -322,47 +382,32 @@ export default function Meals() {
     setPanelMode('log')
   }
 
-  // ─── Log a meal ─────────────────────────────────────────────────────────
-  async function handleLogSubmit(e) {
+  // ── Log a meal ──
+  function handleLogSubmit(e) {
     e.preventDefault()
     if (!chosenFood) return
     const q = Number(quantity)
     if (!Number.isFinite(q) || q <= 0) {
-      setSubmitError('Quantity must be a positive number.')
+      setSubmitClientError('Quantity must be a positive number.')
       return
     }
-    setSubmitting(true)
-    setSubmitError('')
-    try {
-      const payload = {
-        date,
-        mealType: slideOver.mealType,
-        ...buildLogPayload(chosenFood, chosenServingIdx, q),
-      }
-      await addMeal(payload)
-      closeSlideOver()
-      await loadMeals(date)
-    } catch (err) {
-      setSubmitError(err.message || 'Failed to add meal.')
-    } finally {
-      setSubmitting(false)
+    setSubmitClientError('')
+    const payload = {
+      date,
+      mealType: slideOver.mealType,
+      ...buildLogPayload(chosenFood, chosenServingIdx, q),
     }
+    addMealMutation.mutate(payload, {
+      onSuccess: () => closeSlideOver(),
+    })
   }
 
-  // ─── Delete a meal entry ────────────────────────────────────────────────
-  async function handleDelete(id) {
-    setDeletingId(id)
-    try {
-      await deleteMeal(id)
-      await loadMeals(date)
-    } catch {
-      await loadMeals(date)
-    } finally {
-      setDeletingId(null)
-    }
+  // ── Delete a meal entry ──
+  function handleDelete(id) {
+    deleteMealMutation.mutate(id)
   }
 
-  // ─── Custom-food editor ─────────────────────────────────────────────────
+  // ── Custom-food editor ──
   function openCustomFoodEditor(existing = null) {
     if (existing) {
       setCustomFoodForm({
@@ -389,7 +434,7 @@ export default function Meals() {
     } else {
       setCustomFoodForm({ ...EMPTY_CUSTOM_FOOD, servings: [{ ...EMPTY_CUSTOM_SERVING }] })
     }
-    setCustomFoodError('')
+    setCustomFoodClientError('')
     setCustomFoodAdvancedOpen({})
     setPanelMode('custom-food')
   }
@@ -451,76 +496,47 @@ export default function Meals() {
     }
   }
 
-  async function handleSaveCustomFood() {
-    if (!customFoodForm.name.trim()) { setCustomFoodError('Name is required.'); return }
-    if (customFoodForm.servings.length === 0) { setCustomFoodError('Add at least one serving.'); return }
+  function handleSaveCustomFood() {
+    if (!customFoodForm.name.trim()) { setCustomFoodClientError('Name is required.'); return }
+    if (customFoodForm.servings.length === 0) { setCustomFoodClientError('Add at least one serving.'); return }
     for (const [i, s] of customFoodForm.servings.entries()) {
-      if (!s.description.trim()) { setCustomFoodError(`Serving ${i + 1}: description is required.`); return }
+      if (!s.description.trim()) { setCustomFoodClientError(`Serving ${i + 1}: description is required.`); return }
       for (const field of ['calories', 'protein', 'carbs', 'fat']) {
         const n = Number(s[field])
         if (s[field] === '' || !Number.isFinite(n) || n < 0) {
-          setCustomFoodError(`Serving ${i + 1}: ${field} is required and must be a non-negative number.`)
+          setCustomFoodClientError(`Serving ${i + 1}: ${field} is required and must be a non-negative number.`)
           return
         }
       }
     }
-    setSavingCustomFood(true)
-    setCustomFoodError('')
-    try {
-      const payload = buildCustomFoodPayload()
-      if (customFoodForm.id) {
-        await updateCustomFood(customFoodForm.id, payload)
-      } else {
-        await createCustomFood(payload)
-      }
-      await loadUserFoods()
-      setPanelMode('search')
-    } catch (err) {
-      setCustomFoodError(err.message || 'Failed to save custom food.')
-    } finally {
-      setSavingCustomFood(false)
+    setCustomFoodClientError('')
+    const payload = buildCustomFoodPayload()
+    const onSuccess = () => setPanelMode('search')
+    if (customFoodForm.id) {
+      updateCustomFoodMutation.mutate({ id: customFoodForm.id, data: payload }, { onSuccess })
+    } else {
+      createCustomFoodMutation.mutate(payload, { onSuccess })
     }
   }
 
-  async function handleDeleteCustomFood(id) {
-    setDeletingCustomFoodId(id)
-    try {
-      await deleteCustomFood(id)
-      setCustomFoods(prev => prev.filter(f => f.id !== id))
-    } catch (err) {
-      setSearchError(err.message || 'Could not delete food.')
-    } finally {
-      setDeletingCustomFoodId(null)
-    }
+  function handleDeleteCustomFood(id) {
+    deleteCustomFoodMutation.mutate(id)
   }
 
-  // ─── Preset list actions ────────────────────────────────────────────────
-  async function handleLogPreset(presetId) {
-    setLoggingPresetId(presetId)
-    try {
-      await logPreset(presetId, { date, mealType: slideOver.mealType })
-      closeSlideOver()
-      await loadMeals(date)
-    } catch (err) {
-      setPresetError(err.message || 'Failed to log preset.')
-    } finally {
-      setLoggingPresetId(null)
-    }
+  // ── Preset list actions ──
+  function handleLogPreset(presetId) {
+    setPresetClientError('')
+    logPresetMutation.mutate(
+      { presetId, date, mealType: slideOver.mealType },
+      { onSuccess: () => closeSlideOver() },
+    )
   }
 
-  async function handleDeletePreset(id) {
-    setDeletingPresetId(id)
-    try {
-      await deletePreset(id)
-      setPresets(prev => prev.filter(p => p.id !== id))
-    } catch (err) {
-      setPresetError(err.message || 'Could not delete preset.')
-    } finally {
-      setDeletingPresetId(null)
-    }
+  function handleDeletePreset(id) {
+    deletePresetMutation.mutate(id)
   }
 
-  // ─── Preset editor ──────────────────────────────────────────────────────
+  // ── Preset editor ──
   function openPresetEditor(existing = null) {
     if (existing) {
       setPresetForm({
@@ -538,30 +554,15 @@ export default function Meals() {
       setPresetForm({ id: null, name: '', items: [] })
     }
     setPresetSearchQuery('')
-    setPresetSearchResults([])
+    setDebouncedPresetSearchQuery('')
     setPresetPickFood(null)
-    setPresetError('')
+    setPresetClientError('')
     setPanelMode('new-preset')
   }
 
   function handlePresetSearchInput(e) {
-    const q = e.target.value
-    setPresetSearchQuery(q)
+    setPresetSearchQuery(e.target.value)
     setPresetPickFood(null)
-    if (presetDebounceRef.current) clearTimeout(presetDebounceRef.current)
-    if (!q.trim()) { setPresetSearchResults([]); return }
-    presetDebounceRef.current = setTimeout(async () => {
-      if (q.trim().length < 2) { setPresetSearchResults([]); return }
-      setPresetSearchLoading(true)
-      try {
-        const data = await searchFood(q)
-        setPresetSearchResults(data?.foods || [])
-      } catch {
-        setPresetSearchResults([])
-      } finally {
-        setPresetSearchLoading(false)
-      }
-    }, 500)
   }
 
   function pickFoodForPreset(food) {
@@ -575,14 +576,10 @@ export default function Meals() {
     const serving = presetPickFood.servings[presetPickServingIdx]
     if (!serving) return
     if (presetPickFood.source !== 'custom') {
-      // FS picks need to be persisted to our DB so the preset can reference a real servingId.
-      // We'll materialize at preset-save time via a placeholder + materialize step? Simpler:
-      // require the user to log it once OR add an inline "save first" path. For now,
-      // disallow adding FS foods directly — they must be saved to My Foods first.
-      setPresetError('FatSecret foods must be saved to My Foods before they can be added to a preset.')
+      setPresetClientError('FatSecret foods must be saved to My Foods before they can be added to a preset.')
       return
     }
-    setPresetError('')
+    setPresetClientError('')
     setPresetForm(prev => ({
       ...prev,
       items: [
@@ -600,7 +597,7 @@ export default function Meals() {
     setPresetPickServingIdx(0)
     setPresetPickQuantity(1)
     setPresetSearchQuery('')
-    setPresetSearchResults([])
+    setDebouncedPresetSearchQuery('')
   }
 
   function updatePresetItemQuantity(idx, value) {
@@ -616,74 +613,66 @@ export default function Meals() {
     setPresetForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }))
   }
 
-  async function handleSavePreset() {
+  function handleSavePreset() {
     const name = presetForm.name.trim()
-    if (!name) { setPresetError('Preset name is required.'); return }
-    if (presetForm.items.length === 0) { setPresetError('Add at least one item.'); return }
-    setSavingPreset(true)
-    setPresetError('')
-    try {
-      const payload = {
-        name,
-        items: presetForm.items.map(it => ({ servingId: it.servingId, quantity: it.quantity })),
-      }
-      if (presetForm.id) {
-        await updatePreset(presetForm.id, payload)
-      } else {
-        await createPreset(payload)
-      }
-      await loadUserFoods()
-      setPanelMode('presets')
-    } catch (err) {
-      setPresetError(err.message || 'Failed to save preset.')
-    } finally {
-      setSavingPreset(false)
+    if (!name) { setPresetClientError('Preset name is required.'); return }
+    if (presetForm.items.length === 0) { setPresetClientError('Add at least one item.'); return }
+    setPresetClientError('')
+    const payload = {
+      name,
+      items: presetForm.items.map(it => ({ servingId: it.servingId, quantity: it.quantity })),
+    }
+    const onSuccess = () => setPanelMode('presets')
+    if (presetForm.id) {
+      updatePresetMutation.mutate({ id: presetForm.id, data: payload }, { onSuccess })
+    } else {
+      createPresetMutation.mutate(payload, { onSuccess })
     }
   }
 
-  // ─── Save current meal section as a preset ──────────────────────────────
-  async function handleSaveMealAsPreset(items) {
+  // ── Save current meal section as a preset ──
+  function handleSaveMealAsPreset(items) {
     const name = saveAsMeal.name.trim()
     if (!name || !items.length) return
-    setSaveAsMeal(prev => ({ ...prev, saving: true, error: '' }))
-    try {
-      const valid = items.filter(it => it.servingId)
-      const dropped = items.length - valid.length
-      if (valid.length === 0) throw new Error('No items reference a saved food — cannot save as preset.')
-      const payload = {
-        name,
-        items: valid.map(it => ({ servingId: it.servingId, quantity: it.quantity ?? 1 })),
-      }
-      await createPreset(payload)
-      setSaveAsMeal(null)
-      await loadUserFoods()
-      if (dropped > 0) {
-        setError(`Saved preset, but ${dropped} item${dropped === 1 ? '' : 's'} could not be included (their food was deleted).`)
-      }
-    } catch (err) {
-      setSaveAsMeal(prev => ({ ...prev, saving: false, error: err.message || 'Failed to save preset.' }))
+    const valid = items.filter(it => it.servingId)
+    const dropped = items.length - valid.length
+    if (valid.length === 0) {
+      setSaveAsMeal(prev => ({ ...prev, saving: false, error: 'No items reference a saved food — cannot save as preset.' }))
+      return
     }
+    setSaveAsMeal(prev => ({ ...prev, saving: true, error: '' }))
+    const payload = {
+      name,
+      items: valid.map(it => ({ servingId: it.servingId, quantity: it.quantity ?? 1 })),
+    }
+    createPresetMutation.mutate(payload, {
+      onSuccess: () => {
+        setSaveAsMeal(null)
+        if (dropped > 0) {
+          setNotice(`Saved preset, but ${dropped} item${dropped === 1 ? '' : 's'} could not be included (their food was deleted).`)
+        } else {
+          setNotice('')
+        }
+      },
+      onError: (err) => {
+        setSaveAsMeal(prev => ({ ...prev, saving: false, error: err.message || 'Failed to save preset.' }))
+      },
+    })
   }
 
-  async function handleSaveGoals() {
-    setGoalsSaving(true); setGoalsError('')
-    try {
-      const payload = {
-        calorieMin: Number(goalsForm.calorieMin) || null,
-        calorieMax: Number(goalsForm.calorieMax) || null,
-        proteinMin: Number(goalsForm.proteinMin) || null,
-        proteinMax: Number(goalsForm.proteinMax) || null,
-        carbsGoal:  Number(goalsForm.carbsGoal)  || null,
-        fatGoal:    Number(goalsForm.fatGoal)    || null,
-      }
-      const updated = await updateGoals(payload)
-      setGoals(updated)
-      setGoalsEditing(false)
-    } catch (err) {
-      setGoalsError(err.message || 'Failed to save goals.')
-    } finally {
-      setGoalsSaving(false)
+  function handleSaveGoals() {
+    setGoalsClientError('')
+    const payload = {
+      calorieMin: Number(goalsForm.calorieMin) || null,
+      calorieMax: Number(goalsForm.calorieMax) || null,
+      proteinMin: Number(goalsForm.proteinMin) || null,
+      proteinMax: Number(goalsForm.proteinMax) || null,
+      carbsGoal:  Number(goalsForm.carbsGoal)  || null,
+      fatGoal:    Number(goalsForm.fatGoal)    || null,
     }
+    updateGoalsMutation.mutate(payload, {
+      onSuccess: () => setGoalsEditing(false),
+    })
   }
 
   const totals = meals?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 }
@@ -898,7 +887,7 @@ export default function Meals() {
 
         <button
           type="button"
-          onClick={() => { setPanelMode('search'); setSubmitError('') }}
+          onClick={() => { setPanelMode('search'); setSubmitClientError('') }}
           className="text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
         >
           Back to search
@@ -1202,7 +1191,7 @@ export default function Meals() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { setPanelMode('presets'); setPresetError('') }}
+            onClick={() => { setPanelMode('presets'); setPresetClientError('') }}
             className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             aria-label="Back to presets"
           >
@@ -1438,7 +1427,7 @@ export default function Meals() {
                 className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg px-3 py-1.5 transition-colors">
                 {goalsSaving ? 'Saving…' : 'Save'}
               </button>
-              <button type="button" onClick={() => { setGoalsEditing(false); setGoalsError('') }}
+              <button type="button" onClick={() => { setGoalsEditing(false); setGoalsClientError('') }}
                 className="text-xs font-semibold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 rounded-lg px-3 py-1.5 transition-colors">
                 Cancel
               </button>
@@ -1459,7 +1448,7 @@ export default function Meals() {
                 <div key={key}>
                   <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{label}</label>
                   <div className="flex items-center gap-1">
-                    <input type="number" min="0" value={goalsForm[key]}
+                    <input type="number" min="0" value={goalsForm[key] ?? ''}
                       onChange={e => setGoalsForm(f => ({ ...f, [key]: e.target.value }))}
                       inputMode="numeric"
                       style={{ fontSize: '16px' }}
@@ -1644,7 +1633,7 @@ export default function Meals() {
             {panelMode === 'search' && (
               <button
                 type="button"
-                onClick={() => { setPanelMode('presets'); setPresetError('') }}
+                onClick={() => { setPanelMode('presets'); setPresetClientError('') }}
                 className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mr-1"
               >
                 Presets
