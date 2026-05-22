@@ -40,8 +40,9 @@ function validateExercise(ex, idx) {
   }
   // Cap nested sets[] so the outer 50-exercise limit + 100KB body limit aren't
   // the only ceiling on payload size — a single exercise with thousands of
-  // sets would otherwise still fit under both.
-  if (ex.sets !== undefined && ex.sets !== null) {
+  // sets would otherwise still fit under both. `sets: null` is rejected too:
+  // contract is "absent or array", not "absent, null, or array".
+  if (ex.sets !== undefined) {
     if (!Array.isArray(ex.sets)) {
       return `exercises[${idx}].sets must be an array if provided`;
     }

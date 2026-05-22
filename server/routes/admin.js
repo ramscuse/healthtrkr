@@ -139,6 +139,18 @@ router.put('/users/:id', async (req, res, next) => {
             }
           }
 
+          // Snapshot the actor BEFORE the update — otherwise a self-edit
+          // (actorId === target.id) would record the post-update name in
+          // `before.actor`, leaving the audit row internally inconsistent.
+          // Reuse the target read for self-edits to save a roundtrip.
+          const actor =
+            actorId === target.id
+              ? { email: target.email, name: target.name }
+              : await tx.user.findUnique({
+                  where: { id: actorId },
+                  select: { email: true, name: true },
+                })
+
           const updatedUser = await tx.user.update({
             where: { id: target.id },
             data,
@@ -160,10 +172,6 @@ router.put('/users/:id', async (req, res, next) => {
           }
           const action = 'role' in after ? 'ROLE_CHANGE' : 'PROFILE_UPDATE'
           if (Object.keys(after).length > 0) {
-            const actor = await tx.user.findUnique({
-              where: { id: actorId },
-              select: { email: true, name: true },
-            })
             await tx.adminAuditLog.create({
               data: {
                 adminId: actorId,
