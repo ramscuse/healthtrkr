@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { getProgressWeekly, getProgressRange } from '../lib/api.js'
+import { useProgressWeekly, useProgressRange } from '../hooks/useProgress.js'
 import { useDarkMode } from '../context/ThemeContext.jsx'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -96,10 +96,6 @@ export default function Progress() {
   const [monthYear, setMonthYear] = useState(todayDate.getFullYear())
   const [monthMonth, setMonthMonth] = useState(todayDate.getMonth() + 1)
 
-  const [summaries, setSummaries] = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState('')
-
   // Computed date range
   const weekStart = addDays(getMondayOf(today), weekOffset * 7)
   const weekEnd   = addDays(weekStart, 6)
@@ -107,24 +103,15 @@ export default function Progress() {
   const monthStart = getMonthStart(monthYear, monthMonth)
   const numDays    = getDaysInMonth(monthYear, monthMonth)
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('')
-    try {
-      let data
-      if (viewMode === 'weekly') {
-        data = await getProgressWeekly(weekStart)
-      } else {
-        data = await getProgressRange(monthStart, numDays)
-      }
-      setSummaries(Array.isArray(data) ? data : [])
-    } catch (err) {
-      setError(err.message || 'Failed to load progress.')
-    } finally {
-      setLoading(false)
-    }
-  }, [viewMode, weekStart, monthStart, numDays])
+  // Only the active view fetches. Both queries retain their cached data when
+  // disabled, so toggling viewMode back is instant.
+  const weeklyQuery = useProgressWeekly(weekStart, { enabled: viewMode === 'weekly' })
+  const monthlyQuery = useProgressRange(monthStart, numDays, { enabled: viewMode === 'monthly' })
+  const activeQuery = viewMode === 'weekly' ? weeklyQuery : monthlyQuery
 
-  useEffect(() => { load() }, [load])
+  const summaries = Array.isArray(activeQuery.data) ? activeQuery.data : []
+  const loading = activeQuery.isLoading
+  const error = (activeQuery.error && activeQuery.error.message) || ''
 
   // ── Averages (exclude days with no data) ──
   const activeDays = summaries.filter(hasData)
