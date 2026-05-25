@@ -109,6 +109,33 @@ app.use('/api/workouts', authMiddleware, workoutsRouter);    // protected
 ### Production Static File Serving
 In production, Express serves `src/dist/` as static files and catches all non-`/api/*` routes with the SPA fallback. The `build` output directory is `dist/` (relative to the `src/` directory where Vite is run).
 
+### UI & Styling (shadcn/ui + Tailwind v4)
+- **Tailwind v4**, CSS-first config. There is **no `tailwind.config.js`** — theme tokens, the
+  `@custom-variant dark`, and the v3→v4 border-color compat layer live in `src/index.css`. PostCSS
+  uses `@tailwindcss/postcss` (no `autoprefixer`).
+- **shadcn/ui** is the component system: `components.json` is configured for **`base-nova` style on
+  Base UI** (`@base-ui/react`), `tsx: false` (this is a JSX project), `baseColor: neutral`,
+  `cssVariables: true`. Components live in `src/components/ui/`. Add more with
+  `npx shadcn@latest add <name>` (it writes JSX + uses the `@/` alias).
+- **`@/` alias → `src/`** — defined in both `jsconfig.json` and `vite.config.js` (`resolve.alias`).
+  Import primitives as `@/components/ui/button`, helpers as `@/lib/utils` (`cn`).
+- **Theme = dark by default, violet primary.** New accounts are created with `darkMode: true`
+  (`server/routes/auth.js`); `ThemeContext` defaults to dark and toggles `class="dark"` on `<html>`
+  (also set in `src/index.html` to avoid a flash). A user's explicit light choice is respected.
+- **Build UI from tokens, not raw palette classes:** `bg-background` / `bg-card`, `text-foreground`
+  / `text-muted-foreground`, `border-border`, `text-primary` (the violet brand), `ring-foreground/10`.
+  Do **not** introduce `bg-white` / `*-gray-*` / `*-indigo-*` for chrome — use tokens so light/dark
+  both work. Migrated pages have zero non-token neutrals; keep it that way.
+- **Intentional semantic colors are kept** (not mapped to `primary`): water is sky
+  (`Water.jsx`, Dashboard water card), workout categories use `CATEGORY_COLORS` (`Workouts.jsx`),
+  and Progress metric colors (calories indigo, protein violet, etc.).
+- **Toasts:** Sonner. `import { toast } from 'sonner'`; one `<Toaster />` + `<TooltipProvider>` are
+  mounted at the app root in `App.jsx` (inside `ThemeProvider`). Use toasts for mutation success;
+  keep validation errors inline.
+- **Slide-overs → `Sheet`, modals → `Dialog`, confirms → `AlertDialog`.** Recharts stays as-is,
+  wrapped in a `Card` (Progress).
+- `Admin.jsx` is **not yet migrated** to shadcn (still raw Tailwind) — a known follow-up.
+
 ## Validation Patterns
 
 All API routes validate inputs using these patterns:

@@ -20,14 +20,13 @@ import {
 } from '../hooks/useMeals.js'
 import { useGoals, useUpdateGoals } from '../hooks/useGoals.js'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { cn } from '@/lib/utils'
 
 function getTodayString() {
   const now = new Date()

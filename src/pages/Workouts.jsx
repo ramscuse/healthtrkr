@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { X, ArrowLeft, Check, Plus, Minus, Trash2 } from 'lucide-react'
+import { X, ArrowLeft, Check, Plus, Minus } from 'lucide-react'
 import {
   useWorkoutHistory,
   useCustomExercises,
