@@ -1,7 +1,7 @@
 import { Toaster as Sonner } from "sonner";
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-import { useDarkMode } from "@/context/ThemeContext"
+import { useDarkMode } from "@/context/ThemeContext.jsx"
 
 const Toaster = ({
   ...props
