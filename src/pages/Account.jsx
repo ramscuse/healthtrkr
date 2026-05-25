@@ -25,9 +25,10 @@ export default function Account() {
   const [goalsSaved, setGoalsSaved] = useState(false)
 
   // Sync the form buffer to the loaded goals (once they arrive, and again
-  // if the cached goals change from elsewhere).
+  // if the cached goals change from elsewhere). Skip while editing so a
+  // background refetch can't clobber unsaved input.
   useEffect(() => {
-    if (!goals) return
+    if (!goals || goalsEditing) return
     setGoalsForm({
       calorieMin: goals.calorieMin ?? '',
       calorieMax: goals.calorieMax ?? '',
@@ -35,7 +36,7 @@ export default function Account() {
       proteinMax: goals.proteinMax ?? '',
       waterGoal:  goals.waterGoal  ?? '',
     })
-  }, [goals])
+  }, [goals, goalsEditing])
 
   // Password state — direct call (one-shot, not cached).
   const [current, setCurrent] = useState('')

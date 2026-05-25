@@ -39,10 +39,12 @@ export default function Water() {
   const waterGoal = goalsQuery.data?.waterGoal ?? null
 
   // Sync the goal-editor input with the loaded goal (once it arrives, and
-  // again whenever the persisted value changes from elsewhere).
+  // again whenever the persisted value changes from elsewhere). Skip while
+  // the editor is open so a background refetch can't clobber the draft.
   useEffect(() => {
+    if (goalEditing) return
     setGoalInput(waterGoal ?? '')
-  }, [waterGoal])
+  }, [waterGoal, goalEditing])
 
   const adding = logWaterMutation.isPending
   const goalSaving = updateGoalsMutation.isPending
@@ -115,7 +117,7 @@ export default function Water() {
                 className="text-xs font-semibold text-white bg-sky-500 hover:bg-sky-600 disabled:opacity-50 rounded-lg px-2 py-1 transition-colors">
                 {goalSaving ? '…' : 'Save'}
               </button>
-              <button type="button" onClick={() => { setGoalEditing(false); setGoalClientError('') }}
+              <button type="button" onClick={() => { setGoalEditing(false); setGoalInput(waterGoal ?? ''); setGoalClientError('') }}
                 className="text-xs text-sky-400 hover:text-sky-600 transition-colors">✕</button>
             </div>
           )}

@@ -278,8 +278,9 @@ export default function Meals() {
   // ── Effects ──
 
   // Sync goals form buffer to the loaded goals (initial load + external updates).
+  // Skip while editing so a background refetch can't clobber unsaved input.
   useEffect(() => {
-    if (!goals) return
+    if (!goals || goalsEditing) return
     setGoalsForm({
       calorieMin: goals.calorieMin ?? '',
       calorieMax: goals.calorieMax ?? '',
@@ -288,7 +289,7 @@ export default function Meals() {
       carbsGoal:  goals.carbsGoal  ?? '',
       fatGoal:    goals.fatGoal    ?? '',
     })
-  }, [goals])
+  }, [goals, goalsEditing])
 
   // Debounce the slide-over search; the actual fetch happens via useFoodSearch.
   useEffect(() => {
@@ -671,13 +672,15 @@ export default function Meals() {
 
   function handleSaveGoals() {
     setGoalsClientError('')
+    // Empty string → null (unset); any other value (including 0) → Number.
+    const toNullableNumber = (v) => v === '' || v == null ? null : Number(v)
     const payload = {
-      calorieMin: Number(goalsForm.calorieMin) || null,
-      calorieMax: Number(goalsForm.calorieMax) || null,
-      proteinMin: Number(goalsForm.proteinMin) || null,
-      proteinMax: Number(goalsForm.proteinMax) || null,
-      carbsGoal:  Number(goalsForm.carbsGoal)  || null,
-      fatGoal:    Number(goalsForm.fatGoal)    || null,
+      calorieMin: toNullableNumber(goalsForm.calorieMin),
+      calorieMax: toNullableNumber(goalsForm.calorieMax),
+      proteinMin: toNullableNumber(goalsForm.proteinMin),
+      proteinMax: toNullableNumber(goalsForm.proteinMax),
+      carbsGoal:  toNullableNumber(goalsForm.carbsGoal),
+      fatGoal:    toNullableNumber(goalsForm.fatGoal),
     }
     updateGoalsMutation.mutate(payload, {
       onSuccess: () => setGoalsEditing(false),
@@ -743,8 +746,12 @@ export default function Meals() {
           </ul>
         )}
 
-        {!searchLoading && searchQuery.trim() && searchResults.length === 0 && !searchError && (
-          <p className="text-xs text-gray-400 dark:text-gray-500">No results found.</p>
+        {!searchLoading && searchQuery.trim() && !searchError && (
+          searchQuery.trim().length < 2 ? (
+            <p className="text-xs text-gray-400 dark:text-gray-500">Keep typing…</p>
+          ) : searchResults.length === 0 && debouncedSearchQuery.length >= 2 ? (
+            <p className="text-xs text-gray-400 dark:text-gray-500">No results found.</p>
+          ) : null
         )}
 
         <button

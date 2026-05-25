@@ -31,7 +31,8 @@ export function useProgressRange(startDate, numDays, options = {}) {
     ...options,
     enabled:
       !!startDate &&
-      typeof numDays === 'number' &&
+      Number.isFinite(numDays) &&
+      numDays > 0 &&
       (options.enabled ?? true),
   })
 }

@@ -81,8 +81,8 @@ export default function Dashboard() {
   const mealTypes = ['breakfast', 'lunch', 'dinner', 'snack']
 
   function handleSaveActiveCal() {
-    const n = parseFloat(activeCalInput)
-    if (!n || n < 0) { setActiveCalClientError('Enter a valid number.'); return }
+    const n = Number(activeCalInput)
+    if (!Number.isFinite(n) || n < 0) { setActiveCalClientError('Enter a valid number.'); return }
     setActiveCalClientError('')
     updateActiveCal.mutate(
       { date: today, calories: n },
