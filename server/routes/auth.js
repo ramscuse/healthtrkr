@@ -83,7 +83,9 @@ router.post('/register', async (req, res, next) => {
 
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
     const user = await prisma.user.create({
-      data: { email, password: hashed, name },
+      // Dark mode is the app default — new accounts start dark; users can
+      // switch to light in Account, which persists their explicit choice.
+      data: { email, password: hashed, name, darkMode: true },
     });
 
     const token = signToken(user);
