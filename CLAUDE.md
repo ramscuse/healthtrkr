@@ -101,7 +101,6 @@ app.use('/api/workouts', authMiddleware, workoutsRouter);    // protected
 - Intentional exceptions where direct `src/lib/api.js` calls are kept:
   - `Auth.jsx` (login/register/forgot/reset), `Layout.jsx` and `Account.jsx` (logout), `Account.jsx` (changePassword) — one-shot navigation flows.
   - `Meals.jsx` calls `getFoodDetail` directly inside `pickFoodForLog` — single imperative fetch on click, not a cacheable read.
-  - `Admin.jsx` — not yet migrated; hooks are defined in `useAdmin.js` and ready when needed.
   - `UserContext.jsx` and `ThemeContext.jsx` — context boundaries that own their own lifecycle.
   - `ProtectedRoute.jsx` reads `isLoggedIn()` (a cookie helper, not server state).
 - After logout, components that call `logout()` must also call `queryClient.clear()` before navigating to `/login` so the previous session's cache can't leak into a same-tab re-login.
@@ -132,9 +131,10 @@ In production, Express serves `src/dist/` as static files and catches all non-`/
 - **Toasts:** Sonner. `import { toast } from 'sonner'`; one `<Toaster />` + `<TooltipProvider>` are
   mounted at the app root in `App.jsx` (inside `ThemeProvider`). Use toasts for mutation success;
   keep validation errors inline.
-- **Slide-overs → `Sheet`, modals → `Dialog`, confirms → `AlertDialog`.** Recharts stays as-is,
-  wrapped in a `Card` (Progress).
-- `Admin.jsx` is **not yet migrated** to shadcn (still raw Tailwind) — a known follow-up.
+- **Slide-overs → `Sheet`, modals → `Dialog`, confirms → `AlertDialog`** (e.g. Admin's
+  delete-user confirm). Recharts stays as-is, wrapped in a `Card` (Progress).
+- **All pages are migrated** to shadcn + the TanStack hooks, including `Admin.jsx` (now uses the
+  `useAdmin*` hooks instead of direct `api.js` calls).
 
 ## Validation Patterns
 
