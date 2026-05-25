@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
-import { getWaterEntries, logWater, deleteWaterEntry, getGoals, updateGoals } from '../lib/api.js'
+import { useState, useEffect } from 'react'
+import { useWaterEntries, useLogWater, useDeleteWaterEntry } from '../hooks/useWater.js'
+import { useGoals, useUpdateGoals } from '../hooks/useGoals.js'
 
 const PRESETS = [8, 12, 16, 20, 32]
 
@@ -18,80 +19,64 @@ function formatTime(isoStr) {
 export default function Water() {
   const today = getTodayString()
   const [selectedDate, setSelectedDate] = useState(today)
-  const [entries, setEntries]       = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [customAmt, setCustomAmt]   = useState('')
-  const [adding, setAdding]         = useState(false)
-  const [addError, setAddError]     = useState('')
+  const [customAmt, setCustomAmt] = useState('')
+  const [addClientError, setAddClientError] = useState('')
 
-  const [waterGoal, setWaterGoal]       = useState(null)
-  const [goalEditing, setGoalEditing]   = useState(false)
-  const [goalInput, setGoalInput]       = useState('')
-  const [goalSaving, setGoalSaving]     = useState(false)
-  const [goalError, setGoalError]       = useState('')
+  const [goalEditing, setGoalEditing] = useState(false)
+  const [goalInput, setGoalInput] = useState('')
+  const [goalClientError, setGoalClientError] = useState('')
 
+  const entriesQuery = useWaterEntries(selectedDate)
+  const goalsQuery = useGoals()
+  const logWaterMutation = useLogWater()
+  const deleteWaterMutation = useDeleteWaterEntry()
+  const updateGoalsMutation = useUpdateGoals()
+
+  const entries = Array.isArray(entriesQuery.data) ? entriesQuery.data : []
+  const loading = entriesQuery.isPending
   const total = entries.reduce((sum, e) => sum + e.amount, 0)
   const cups  = (total / 8).toFixed(1)
+  const waterGoal = goalsQuery.data?.waterGoal ?? null
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = await getWaterEntries(selectedDate)
-      setEntries(Array.isArray(data) ? data : [])
-    } catch {
-      setEntries([])
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedDate])
-
-  useEffect(() => { load() }, [load])
-
+  // Sync the goal-editor input with the loaded goal (once it arrives, and
+  // again whenever the persisted value changes from elsewhere). Skip while
+  // the editor is open so a background refetch can't clobber the draft.
   useEffect(() => {
-    getGoals().then(g => {
-      setWaterGoal(g.waterGoal ?? null)
-      setGoalInput(g.waterGoal ?? '')
-    }).catch(() => {})
-  }, [])
+    if (goalEditing) return
+    setGoalInput(waterGoal ?? '')
+  }, [waterGoal, goalEditing])
 
-  async function handleAdd(amount) {
+  const adding = logWaterMutation.isPending
+  const goalSaving = updateGoalsMutation.isPending
+  const addError = addClientError
+    || (logWaterMutation.error && logWaterMutation.error.message)
+    || (deleteWaterMutation.error && deleteWaterMutation.error.message)
+    || ''
+  const goalError = goalClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || ''
+
+  function handleAdd(amount) {
     if (!amount || amount <= 0) return
-    setAdding(true); setAddError('')
-    try {
-      const entry = await logWater({ date: selectedDate, amount })
-      setEntries(prev => [...prev, entry])
-    } catch (err) {
-      setAddError(err.message || 'Failed to add.')
-    } finally {
-      setAdding(false)
-    }
+    setAddClientError('')
+    logWaterMutation.mutate({ date: selectedDate, amount })
   }
 
-  async function handleDelete(id) {
-    try {
-      await deleteWaterEntry(id)
-      setEntries(prev => prev.filter(e => e.id !== id))
-    } catch { /* swallow */ }
+  function handleDelete(id) {
+    deleteWaterMutation.mutate(id)
   }
 
-  async function handleSaveWaterGoal() {
+  function handleSaveWaterGoal() {
     const n = parseFloat(goalInput)
-    if (!n || n <= 0) { setGoalError('Enter a valid goal.'); return }
-    setGoalSaving(true); setGoalError('')
-    try {
-      const updated = await updateGoals({ waterGoal: n })
-      setWaterGoal(updated.waterGoal)
-      setGoalEditing(false)
-    } catch (err) {
-      setGoalError(err.message || 'Failed to save.')
-    } finally {
-      setGoalSaving(false)
-    }
+    if (!n || n <= 0) { setGoalClientError('Enter a valid goal.'); return }
+    setGoalClientError('')
+    updateGoalsMutation.mutate(
+      { waterGoal: n },
+      { onSuccess: () => setGoalEditing(false) },
+    )
   }
 
   function handleCustomAdd() {
     const n = parseFloat(customAmt)
-    if (!n || n <= 0) { setAddError('Enter a valid amount.'); return }
+    if (!n || n <= 0) { setAddClientError('Enter a valid amount.'); return }
     setCustomAmt('')
     handleAdd(n)
   }
@@ -123,7 +108,7 @@ export default function Water() {
             </button>
           ) : (
             <div className="flex items-center gap-2">
-              <input type="number" min="1" value={goalInput} onChange={e => { setGoalInput(e.target.value); setGoalError('') }}
+              <input type="number" min="1" value={goalInput} onChange={e => { setGoalInput(e.target.value); setGoalClientError('') }}
                 inputMode="numeric"
                 style={{ fontSize: '16px' }}
                 className="w-20 border border-sky-200 dark:border-sky-700 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
@@ -132,7 +117,7 @@ export default function Water() {
                 className="text-xs font-semibold text-white bg-sky-500 hover:bg-sky-600 disabled:opacity-50 rounded-lg px-2 py-1 transition-colors">
                 {goalSaving ? '…' : 'Save'}
               </button>
-              <button type="button" onClick={() => { setGoalEditing(false); setGoalError('') }}
+              <button type="button" onClick={() => { setGoalEditing(false); setGoalInput(waterGoal ?? ''); setGoalClientError('') }}
                 className="text-xs text-sky-400 hover:text-sky-600 transition-colors">✕</button>
             </div>
           )}
@@ -176,7 +161,7 @@ export default function Water() {
             min="1"
             placeholder="Custom oz…"
             value={customAmt}
-            onChange={e => { setCustomAmt(e.target.value); setAddError('') }}
+            onChange={e => { setCustomAmt(e.target.value); setAddClientError('') }}
             onKeyDown={e => e.key === 'Enter' && handleCustomAdd()}
             inputMode="decimal"
             style={{ fontSize: '16px' }}

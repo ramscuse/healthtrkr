@@ -66,6 +66,8 @@ lib/prisma.js         — shared singleton PrismaClient (all routes import from 
 db/schema.prisma      — Prisma schema (schema path set in package.json → "prisma.schema")
 src/                  — React frontend (Vite root)
 src/lib/api.js        — all fetch calls to backend (single request() wrapper)
+src/lib/queryClient.js — TanStack Query client singleton + default options
+src/hooks/            — TanStack Query hooks, one file per domain (useMeals, useWater, etc.) + queryKeys.js factory
 src/context/          — ThemeContext (dark mode, persisted to DB via /api/account)
 src/pages/            — Dashboard, Meals, Workouts, Progress, Water, Account, Auth
 src/components/       — Layout (nav shell), ProtectedRoute, StatCard
@@ -88,7 +90,21 @@ app.use('/api/workouts', authMiddleware, workoutsRouter);    // protected
 - CSRF is mitigated by `SameSite=Strict` on the token cookie + fixed-origin CORS (`credentials: true`, single allowed origin).
 
 ### Frontend API Client
-`src/lib/api.js` is the single source for all backend calls. The JWT lives in the httpOnly cookie set by the server, so the client doesn't read or attach it — `credentials: 'include'` carries it. 401s clear the local `sessionHint` and redirect to `/login`.
+`src/lib/api.js` is the single source for all backend calls. The JWT lives in the httpOnly cookie set by the server, so the client doesn't read or attach it — `credentials: 'include'` carries it. 401s clear the local `sessionHint` and redirect to `/login` (the redirect happens inside `request()`; do not add a duplicate `onError` handler to the React Query client).
+
+### Data Fetching (TanStack Query)
+- Pages and components never call `src/lib/api.js` directly for server data. Instead, they import hooks from `src/hooks/use<Domain>.js` (`useMeals`, `useWorkouts`, `useWater`, `useGoals`, `useAccount`, `useHealth`, `useProgress`, `useAdmin`).
+- Query keys are produced exclusively by the factories in `src/hooks/queryKeys.js`. Mutations invalidate via those same factories — never hand-write a key.
+- Within meals and workouts, daily-write entries live under a `diary` sub-prefix so that `useAddMeal` / `useLogWorkout` invalidations do **not** sweep the rate-limited FatSecret search cache or the static workout template (`staleTime: Infinity`).
+- Mutations that affect aggregate progress data (meals, water, workouts, active calories) **must** invalidate `queryKeys.progress.all` so the Progress page recomputes.
+- Mutations that mutate `data` instead of full positional args destructure inside `mutationFn` (e.g. `useUpdateActiveCalories` accepts `{ date, calories }`, `useUpdateUser` accepts `{ id, patch }`). Match that convention when adding new mutations.
+- Intentional exceptions where direct `src/lib/api.js` calls are kept:
+  - `Auth.jsx` (login/register/forgot/reset), `Layout.jsx` and `Account.jsx` (logout), `Account.jsx` (changePassword) — one-shot navigation flows.
+  - `Meals.jsx` calls `getFoodDetail` directly inside `pickFoodForLog` — single imperative fetch on click, not a cacheable read.
+  - `Admin.jsx` — not yet migrated; hooks are defined in `useAdmin.js` and ready when needed.
+  - `UserContext.jsx` and `ThemeContext.jsx` — context boundaries that own their own lifecycle.
+  - `ProtectedRoute.jsx` reads `isLoggedIn()` (a cookie helper, not server state).
+- After logout, components that call `logout()` must also call `queryClient.clear()` before navigating to `/login` so the previous session's cache can't leak into a same-tab re-login.
 
 ### Production Static File Serving
 In production, Express serves `src/dist/` as static files and catches all non-`/api/*` routes with the SPA fallback. The `build` output directory is `dist/` (relative to the `src/` directory where Vite is run).

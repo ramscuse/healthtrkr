@@ -1,95 +1,102 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { changePassword, getAccount, getGoals, updateGoals, logout } from '../lib/api.js'
+import { useQueryClient } from '@tanstack/react-query'
+import { changePassword, logout } from '../lib/api.js'
+import { useAccount } from '../hooks/useAccount.js'
+import { useGoals, useUpdateGoals } from '../hooks/useGoals.js'
 import { useDarkMode } from '../context/ThemeContext.jsx'
 
 export default function Account() {
   const { darkMode, toggleDarkMode } = useDarkMode()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  // Profile state
-  const [profile, setProfile] = useState(null)
+  const accountQuery = useAccount()
+  const goalsQuery = useGoals()
+  const updateGoalsMutation = useUpdateGoals()
 
-  // Goals state
-  const [goals, setGoals]               = useState(null)
+  const profile = accountQuery.data
+  const goals = goalsQuery.data
+
+  // Goals form state — local because it's edit-buffer, not server state.
   const [goalsEditing, setGoalsEditing] = useState(false)
-  const [goalsForm, setGoalsForm]       = useState({})
-  const [goalsSaving, setGoalsSaving]   = useState(false)
-  const [goalsError, setGoalsError]     = useState('')
-  const [goalsSaved, setGoalsSaved]     = useState(false)
+  const [goalsForm, setGoalsForm] = useState({})
+  const [goalsClientError, setGoalsClientError] = useState('')
+  const [goalsSaved, setGoalsSaved] = useState(false)
 
-  // Password state
+  // Sync the form buffer to the loaded goals (once they arrive, and again
+  // if the cached goals change from elsewhere). Skip while editing so a
+  // background refetch can't clobber unsaved input.
+  useEffect(() => {
+    if (!goals || goalsEditing) return
+    setGoalsForm({
+      calorieMin: goals.calorieMin ?? '',
+      calorieMax: goals.calorieMax ?? '',
+      proteinMin: goals.proteinMin ?? '',
+      proteinMax: goals.proteinMax ?? '',
+      waterGoal:  goals.waterGoal  ?? '',
+    })
+  }, [goals, goalsEditing])
+
+  // Password state — direct call (one-shot, not cached).
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
+  const [pwdSaving, setPwdSaving] = useState(false)
+  const [pwdError, setPwdError] = useState('')
+  const [pwdSuccess, setPwdSuccess] = useState(false)
 
-  useEffect(() => {
-    getAccount().then(u => setProfile(u)).catch(() => {})
-    getGoals().then(g => {
-      setGoals(g)
-      setGoalsForm({
-        calorieMin: g.calorieMin ?? '',
-        calorieMax: g.calorieMax ?? '',
-        proteinMin: g.proteinMin ?? '',
-        proteinMax: g.proteinMax ?? '',
-        waterGoal:  g.waterGoal  ?? '',
-      })
-    }).catch(() => {})
-  }, [])
+  const goalsSaving = updateGoalsMutation.isPending
+  const goalsError = goalsClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || ''
 
-  async function handleSaveGoals() {
-    setGoalsSaving(true); setGoalsError(''); setGoalsSaved(false)
-    try {
-      const payload = {}
-      for (const [key, val] of Object.entries(goalsForm)) {
-        const n = Number(val)
-        if (val !== '' && Number.isFinite(n)) payload[key] = n
-      }
-      const updated = await updateGoals(payload)
-      setGoals(updated)
-      setGoalsEditing(false)
-      setGoalsSaved(true)
-      setTimeout(() => setGoalsSaved(false), 2500)
-    } catch (err) {
-      setGoalsError(err.message || 'Failed to save goals.')
-    } finally {
-      setGoalsSaving(false)
+  function handleSaveGoals() {
+    setGoalsClientError('')
+    setGoalsSaved(false)
+    const payload = {}
+    for (const [key, val] of Object.entries(goalsForm)) {
+      const n = Number(val)
+      if (val !== '' && Number.isFinite(n)) payload[key] = n
     }
+    updateGoalsMutation.mutate(payload, {
+      onSuccess: () => {
+        setGoalsEditing(false)
+        setGoalsSaved(true)
+        setTimeout(() => setGoalsSaved(false), 2500)
+      },
+    })
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setError('')
-    setSuccess(false)
+    setPwdError('')
+    setPwdSuccess(false)
 
     if (next !== confirm) {
-      setError('New passwords do not match.')
+      setPwdError('New passwords do not match.')
       return
     }
     if (next.length < 6) {
-      setError('New password must be at least 6 characters.')
+      setPwdError('New password must be at least 6 characters.')
       return
     }
 
-    setLoading(true)
+    setPwdSaving(true)
     try {
       await changePassword(current, next)
-      setSuccess(true)
+      setPwdSuccess(true)
       setCurrent('')
       setNext('')
       setConfirm('')
     } catch (err) {
-      setError(err.message || 'Failed to update password.')
+      setPwdError(err.message || 'Failed to update password.')
     } finally {
-      setLoading(false)
+      setPwdSaving(false)
     }
   }
 
   async function handleLogout() {
     try { await logout() } catch { /* ignore */ }
+    queryClient.clear()
     navigate('/login')
   }
 
@@ -121,7 +128,7 @@ export default function Account() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Goals</h2>
           {!goalsEditing ? (
-            <button type="button" onClick={() => { setGoalsEditing(true); setGoalsError('') }}
+            <button type="button" onClick={() => { setGoalsEditing(true); setGoalsClientError('') }}
               className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-300 rounded-lg px-3 py-1.5 transition-colors">
               Edit
             </button>
@@ -133,7 +140,7 @@ export default function Account() {
               </button>
               <button type="button" onClick={() => {
                 setGoalsEditing(false)
-                setGoalsError('')
+                setGoalsClientError('')
                 setGoalsForm({
                   calorieMin: goals?.calorieMin ?? '',
                   calorieMax: goals?.calorieMax ?? '',
@@ -170,7 +177,7 @@ export default function Account() {
                   <input
                     type="number"
                     min="0"
-                    value={goalsForm[key]}
+                    value={goalsForm[key] ?? ''}
                     onChange={e => setGoalsForm(f => ({ ...f, [key]: e.target.value }))}
                     inputMode="numeric"
                     style={{ fontSize: '16px' }}
@@ -230,14 +237,14 @@ export default function Account() {
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm p-6">
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-5">Change Password</h2>
 
-        {success && (
+        {pwdSuccess && (
           <div className="mb-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 text-green-700 dark:text-green-400 text-sm rounded-lg px-4 py-3">
             Password updated successfully.
           </div>
         )}
-        {error && (
+        {pwdError && (
           <div className="mb-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-400 text-sm rounded-lg px-4 py-3">
-            {error}
+            {pwdError}
           </div>
         )}
 
@@ -283,10 +290,10 @@ export default function Account() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={pwdSaving}
             className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
           >
-            {loading ? 'Updating...' : 'Update Password'}
+            {pwdSaving ? 'Updating...' : 'Update Password'}
           </button>
         </form>
       </div>

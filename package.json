@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@tanstack/react-query": "^5.100.11",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "bcrypt": "^5.1.1",
@@ -34,6 +35,7 @@
     "schema": "db/schema.prisma"
   },
   "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.100.11",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",

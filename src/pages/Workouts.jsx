@@ -1,9 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  logWorkout, getWorkoutHistory,
-  getCustomExercises, createCustomExercise, deleteCustomExercise,
-  getWorkoutPresets, createWorkoutPreset, updateWorkoutPreset, deleteWorkoutPreset,
-} from '../lib/api.js'
+  useWorkoutHistory,
+  useCustomExercises,
+  useCreateCustomExercise,
+  useDeleteCustomExercise,
+  useWorkoutPresets,
+  useCreateWorkoutPreset,
+  useUpdateWorkoutPreset,
+  useDeleteWorkoutPreset,
+  useLogWorkout,
+} from '../hooks/useWorkouts.js'
 import { EXERCISES, CATEGORIES } from '../data/exercises.js'
 
 function getTodayString() {
@@ -42,85 +48,95 @@ export default function Workouts() {
   const today = getTodayString()
   const [selectedDate, setSelectedDate] = useState(today)
 
-  // Plan
-  const [plan, setPlan]               = useState([])
-  const [saving, setSaving]           = useState(false)
-  const [saveError, setSaveError]     = useState('')
+  // Plan (local)
+  const [plan, setPlan] = useState([])
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveClientError, setSaveClientError] = useState('')
 
-  // Save plan as preset
-  const [saveAsPreset, setSaveAsPreset]           = useState(false)
-  const [saveAsPresetName, setSaveAsPresetName]   = useState('')
-  const [saveAsPresetErr, setSaveAsPresetErr]     = useState('')
-  const [saveAsPresetSaving, setSaveAsPresetSaving] = useState(false)
+  // Save plan as preset (local)
+  const [saveAsPreset, setSaveAsPreset] = useState(false)
+  const [saveAsPresetName, setSaveAsPresetName] = useState('')
+  const [saveAsPresetClientErr, setSaveAsPresetClientErr] = useState('')
 
-  // Library
+  // Library (local)
   const [activeCategory, setActiveCategory] = useState('All')
 
-  // Custom exercises
-  const [customExercises, setCustomExercises] = useState([])
+  // Panel (local)
+  const [panelMode, setPanelMode] = useState(null) // null | 'presets' | 'new-preset' | 'new-exercise'
+  const [editingPreset, setEditingPreset] = useState(null)
 
-  // Panel
-  const [panelMode, setPanelMode]     = useState(null) // null | 'presets' | 'new-preset' | 'new-exercise'
-  const [editingPreset, setEditingPreset] = useState(null) // preset object when editing
+  // New exercise form (local)
+  const [exForm, setExForm] = useState(EMPTY_EX_FORM)
+  const [exClientError, setExClientError] = useState('')
 
-  // New exercise form
-  const [exForm, setExForm]           = useState(EMPTY_EX_FORM)
-  const [exSaving, setExSaving]       = useState(false)
-  const [exError, setExError]         = useState('')
-
-  // Presets
-  const [presets, setPresets]         = useState([])
-  const [presetsLoading, setPresetsLoading] = useState(false)
-
-  // New/Edit preset form
-  const [presetName, setPresetName]   = useState('')
-  const [presetPlan, setPresetPlan]   = useState([])
+  // New/Edit preset form (local)
+  const [presetName, setPresetName] = useState('')
+  const [presetPlan, setPresetPlan] = useState([])
   const [presetCategory, setPresetCategory] = useState('All')
-  const [presetSaving, setPresetSaving] = useState(false)
-  const [presetError, setPresetError] = useState('')
+  const [presetClientError, setPresetClientError] = useState('')
 
-  // Quick log
+  // Quick log (local)
   const [quickCategories, setQuickCategories] = useState(new Set())
-  const [quickSaving, setQuickSaving] = useState(false)
-  const [quickError, setQuickError]   = useState('')
   const [quickSuccess, setQuickSuccess] = useState(false)
+  const [quickClientError, setQuickClientError] = useState('')
 
-  // History
-  const [history, setHistory]         = useState([])
-  const [historyLoading, setHistoryLoading] = useState(true)
-
-  // Generator
+  // Generator (local)
   const [showGenerator, setShowGenerator] = useState(false)
-  const [genEnabled, setGenEnabled]   = useState(new Set())
-  const [genCounts, setGenCounts]     = useState({
+  const [genEnabled, setGenEnabled] = useState(new Set())
+  const [genCounts, setGenCounts] = useState({
     'Upper Body Push': 6, 'Upper Body Pull': 6, 'Lower Body': 6, 'Core': 3, 'Cardio': 1,
   })
+
+  // ── Hooks: reads ──
+  const historyQuery = useWorkoutHistory(20)
+  const customExercisesQuery = useCustomExercises()
+  const presetsQuery = useWorkoutPresets()
+
+  // ── Hooks: mutations ──
+  // Separate useLogWorkout instances for plan-save vs quick-log so their
+  // isPending / error states don't collide.
+  const logWorkoutMutation = useLogWorkout()
+  const quickLogMutation = useLogWorkout()
+  const createCustomExerciseMutation = useCreateCustomExercise()
+  const deleteCustomExerciseMutation = useDeleteCustomExercise()
+  const createWorkoutPresetMutation = useCreateWorkoutPreset()
+  const updateWorkoutPresetMutation = useUpdateWorkoutPreset()
+  const deleteWorkoutPresetMutation = useDeleteWorkoutPreset()
+  // Separate instance for the "Save Plan as Preset" inline form.
+  const saveAsPresetMutation = useCreateWorkoutPreset()
+
+  // ── Derived ──
+  const history = historyQuery.data || []
+  const historyLoading = historyQuery.isPending
+  const customExercises = customExercisesQuery.data || []
+  const presets = presetsQuery.data || []
+  const presetsLoading = presetsQuery.isPending
+
+  const saving = logWorkoutMutation.isPending
+  const saveError = saveClientError || (logWorkoutMutation.error && logWorkoutMutation.error.message) || ''
+
+  const quickSaving = quickLogMutation.isPending
+  const quickError = quickClientError || (quickLogMutation.error && quickLogMutation.error.message) || ''
+
+  const exSaving = createCustomExerciseMutation.isPending
+  const exError = exClientError
+    || (createCustomExerciseMutation.error && createCustomExerciseMutation.error.message)
+    || (deleteCustomExerciseMutation.error && deleteCustomExerciseMutation.error.message)
+    || ''
+
+  const presetSaving = createWorkoutPresetMutation.isPending || updateWorkoutPresetMutation.isPending
+  const presetError = presetClientError
+    || (createWorkoutPresetMutation.error && createWorkoutPresetMutation.error.message)
+    || (updateWorkoutPresetMutation.error && updateWorkoutPresetMutation.error.message)
+    || (deleteWorkoutPresetMutation.error && deleteWorkoutPresetMutation.error.message)
+    || ''
+
+  const saveAsPresetSaving = saveAsPresetMutation.isPending
+  const saveAsPresetErr = saveAsPresetClientErr || (saveAsPresetMutation.error && saveAsPresetMutation.error.message) || ''
 
   // Auto-dismiss banners
   useEffect(() => { if (saveSuccess)   { const t = setTimeout(() => setSaveSuccess(false),  4000); return () => clearTimeout(t) } }, [saveSuccess])
   useEffect(() => { if (quickSuccess)  { const t = setTimeout(() => setQuickSuccess(false), 4000); return () => clearTimeout(t) } }, [quickSuccess])
-
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true)
-    try { const data = await getWorkoutHistory(20); setHistory(Array.isArray(data) ? data : []) }
-    catch { setHistory([]) }
-    finally { setHistoryLoading(false) }
-  }, [])
-
-  const loadCustomExercises = useCallback(async () => {
-    try { const data = await getCustomExercises(); setCustomExercises(Array.isArray(data) ? data : []) }
-    catch { setCustomExercises([]) }
-  }, [])
-
-  const loadPresets = useCallback(async () => {
-    setPresetsLoading(true)
-    try { const data = await getWorkoutPresets(); setPresets(Array.isArray(data) ? data : []) }
-    catch { setPresets([]) }
-    finally { setPresetsLoading(false) }
-  }, [])
-
-  useEffect(() => { loadHistory(); loadCustomExercises(); loadPresets() }, [loadHistory, loadCustomExercises, loadPresets])
 
   // All exercises merged (static + custom)
   const allExercises = [
@@ -144,7 +160,7 @@ export default function Workouts() {
   }
 
   function removeExercise(id) { setPlan(prev => prev.filter(e => e.id !== id)) }
-  function clearPlan() { setPlan([]); setSaveSuccess(false); setSaveError(''); setSaveAsPreset(false) }
+  function clearPlan() { setPlan([]); setSaveSuccess(false); setSaveClientError(''); setSaveAsPreset(false) }
 
   // Generator
   function toggleGenCategory(cat) {
@@ -164,27 +180,28 @@ export default function Workouts() {
   }
 
   // Save plan to calendar
-  async function handleSavePlan() {
+  function handleSavePlan() {
     if (!plan.length) return
-    setSaving(true); setSaveError('')
-    try {
-      const cats = [...new Set(plan.map(e => e.category))]
-      const splitDay = cats.length === 1 ? cats[0].toLowerCase().replace(/ /g, '_') : 'custom'
-      await logWorkout({ date: selectedDate, splitDay, exercises: plan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) })
-      setSaveSuccess(true); loadHistory()
-    } catch (err) { setSaveError(err.message || 'Failed to save.') }
-    finally { setSaving(false) }
+    setSaveClientError('')
+    const cats = [...new Set(plan.map(e => e.category))]
+    const splitDay = cats.length === 1 ? cats[0].toLowerCase().replace(/ /g, '_') : 'custom'
+    const payload = { date: selectedDate, splitDay, exercises: plan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) }
+    logWorkoutMutation.mutate(payload, {
+      onSuccess: () => setSaveSuccess(true),
+    })
   }
 
   // Save plan as preset
-  async function handleSaveAsPreset() {
-    if (!saveAsPresetName.trim()) { setSaveAsPresetErr('Enter a preset name.'); return }
-    setSaveAsPresetSaving(true); setSaveAsPresetErr('')
-    try {
-      await createWorkoutPreset({ name: saveAsPresetName.trim(), exercises: plan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) })
-      setSaveAsPreset(false); setSaveAsPresetName(''); loadPresets()
-    } catch (err) { setSaveAsPresetErr(err.message || 'Failed to save preset.') }
-    finally { setSaveAsPresetSaving(false) }
+  function handleSaveAsPreset() {
+    if (!saveAsPresetName.trim()) { setSaveAsPresetClientErr('Enter a preset name.'); return }
+    setSaveAsPresetClientErr('')
+    const payload = { name: saveAsPresetName.trim(), exercises: plan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) }
+    saveAsPresetMutation.mutate(payload, {
+      onSuccess: () => {
+        setSaveAsPreset(false)
+        setSaveAsPresetName('')
+      },
+    })
   }
 
   // Quick log
@@ -192,37 +209,43 @@ export default function Workouts() {
     setQuickCategories(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n })
   }
 
-  async function handleQuickLog() {
+  function handleQuickLog() {
     if (!quickCategories.size) return
-    setQuickSaving(true); setQuickError('')
-    try {
-      const cats = [...quickCategories]
-      const splitDay = cats.length === 1 ? cats[0].toLowerCase().replace(/ /g, '_') : cats.map(c => c.toLowerCase().replace(/ /g, '_')).join('+')
-      await logWorkout({ date: selectedDate, splitDay, exercises: [] })
-      setQuickCategories(new Set()); setQuickSuccess(true); loadHistory()
-    } catch (err) { setQuickError(err.message || 'Failed to save.') }
-    finally { setQuickSaving(false) }
+    setQuickClientError('')
+    const cats = [...quickCategories]
+    const splitDay = cats.length === 1 ? cats[0].toLowerCase().replace(/ /g, '_') : cats.map(c => c.toLowerCase().replace(/ /g, '_')).join('+')
+    quickLogMutation.mutate({ date: selectedDate, splitDay, exercises: [] }, {
+      onSuccess: () => {
+        setQuickCategories(new Set())
+        setQuickSuccess(true)
+      },
+    })
   }
 
   // Custom exercise form
-  async function handleCreateExercise() {
-    if (!exForm.name.trim()) { setExError('Name is required.'); return }
+  function handleCreateExercise() {
+    if (!exForm.name.trim()) { setExClientError('Name is required.'); return }
     const muscles = exForm.muscles.split(',').map(m => m.trim()).filter(Boolean)
-    if (!muscles.length) { setExError('Enter at least one muscle.'); return }
-    setExSaving(true); setExError('')
-    try {
-      await createCustomExercise({ name: exForm.name.trim(), category: exForm.category, muscles })
-      setExForm(EMPTY_EX_FORM); loadCustomExercises(); closePanel()
-    } catch (err) { setExError(err.message || 'Failed to create.') }
-    finally { setExSaving(false) }
+    if (!muscles.length) { setExClientError('Enter at least one muscle.'); return }
+    setExClientError('')
+    createCustomExerciseMutation.mutate(
+      { name: exForm.name.trim(), category: exForm.category, muscles },
+      {
+        onSuccess: () => {
+          setExForm(EMPTY_EX_FORM)
+          closePanel()
+        },
+      },
+    )
   }
 
-  async function handleDeleteCustomExercise(id) {
-    try {
-      await deleteCustomExercise(id)
-      setCustomExercises(prev => prev.filter(e => e.id !== id))
-      setPlan(prev => prev.filter(e => e.id !== id))
-    } catch { /* swallow */ }
+  function handleDeleteCustomExercise(id) {
+    deleteCustomExerciseMutation.mutate(id, {
+      onSuccess: () => {
+        // Keep local plan in sync — the deleted exercise can no longer be in it.
+        setPlan(prev => prev.filter(e => e.id !== id))
+      },
+    })
   }
 
   // Preset panel helpers
@@ -236,13 +259,13 @@ export default function Workouts() {
     setPresetName(preset ? preset.name : '')
     setPresetPlan(preset ? (Array.isArray(preset.exercises) ? preset.exercises : []) : [])
     setPresetCategory('All')
-    setPresetError('')
+    setPresetClientError('')
     setPanelMode('new-preset')
   }
 
   function openNewExercisePanel() {
     setExForm(EMPTY_EX_FORM)
-    setExError('')
+    setExClientError('')
     setPanelMode('new-exercise')
   }
 
@@ -255,22 +278,20 @@ export default function Workouts() {
     else setPresetPlan(prev => [...prev, exercise])
   }
 
-  async function handleSavePreset() {
-    if (!presetName.trim()) { setPresetError('Enter a preset name.'); return }
-    setPresetSaving(true); setPresetError('')
-    try {
-      const payload = { name: presetName.trim(), exercises: presetPlan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) }
-      if (editingPreset) await updateWorkoutPreset(editingPreset.id, payload)
-      else await createWorkoutPreset(payload)
-      loadPresets()
-      closePanel()
-    } catch (err) { setPresetError(err.message || 'Failed to save.') }
-    finally { setPresetSaving(false) }
+  function handleSavePreset() {
+    if (!presetName.trim()) { setPresetClientError('Enter a preset name.'); return }
+    setPresetClientError('')
+    const payload = { name: presetName.trim(), exercises: presetPlan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) }
+    const onSuccess = () => closePanel()
+    if (editingPreset) {
+      updateWorkoutPresetMutation.mutate({ id: editingPreset.id, data: payload }, { onSuccess })
+    } else {
+      createWorkoutPresetMutation.mutate(payload, { onSuccess })
+    }
   }
 
-  async function handleDeletePreset(id) {
-    try { await deleteWorkoutPreset(id); setPresets(prev => prev.filter(p => p.id !== id)) }
-    catch { /* swallow */ }
+  function handleDeletePreset(id) {
+    deleteWorkoutPresetMutation.mutate(id)
   }
 
   function handleUsePreset(preset) {
@@ -377,7 +398,7 @@ export default function Workouts() {
                     className="flex-1 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-3 py-2 transition-colors">
                     {saveAsPresetSaving ? 'Saving...' : 'Save Preset'}
                   </button>
-                  <button type="button" onClick={() => { setSaveAsPreset(false); setSaveAsPresetName(''); setSaveAsPresetErr('') }}
+                  <button type="button" onClick={() => { setSaveAsPreset(false); setSaveAsPresetName(''); setSaveAsPresetClientErr('')}}
                     className="border border-gray-200 hover:border-gray-300 text-gray-600 text-sm font-semibold rounded-lg px-3 py-2 transition-colors dark:border-gray-600 dark:hover:border-gray-500 dark:text-gray-300">
                     Cancel
                   </button>
