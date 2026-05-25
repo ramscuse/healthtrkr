@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { X, ArrowLeft, Check, Plus, Minus, Trash2 } from 'lucide-react'
 import {
   useWorkoutHistory,
   useCustomExercises,
@@ -11,6 +13,14 @@ import {
   useLogWorkout,
 } from '../hooks/useWorkouts.js'
 import { EXERCISES, CATEGORIES } from '../data/exercises.js'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 
 function getTodayString() {
   const now = new Date()
@@ -29,6 +39,7 @@ function toHumanLabel(splitDay) {
   return splitDay.replace(/_/g, ' ').replace(/\+/g, ' + ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+// Per-category color coding (semantic — distinguishes muscle-group categories).
 const CATEGORY_COLORS = {
   'Upper Body Push': { dot: 'bg-indigo-500', text: 'text-indigo-600 dark:text-indigo-400', badge: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300', tab: 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' },
   'Upper Body Pull': { dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', tab: 'border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400' },
@@ -44,13 +55,15 @@ function truncate(str, max) {
 
 const EMPTY_EX_FORM = { name: '', category: 'Upper Body Push', muscles: '' }
 
+const SELECT_CLASS =
+  'h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30'
+
 export default function Workouts() {
   const today = getTodayString()
   const [selectedDate, setSelectedDate] = useState(today)
 
   // Plan (local)
   const [plan, setPlan] = useState([])
-  const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveClientError, setSaveClientError] = useState('')
 
   // Save plan as preset (local)
@@ -77,7 +90,6 @@ export default function Workouts() {
 
   // Quick log (local)
   const [quickCategories, setQuickCategories] = useState(new Set())
-  const [quickSuccess, setQuickSuccess] = useState(false)
   const [quickClientError, setQuickClientError] = useState('')
 
   // Generator (local)
@@ -134,10 +146,6 @@ export default function Workouts() {
   const saveAsPresetSaving = saveAsPresetMutation.isPending
   const saveAsPresetErr = saveAsPresetClientErr || (saveAsPresetMutation.error && saveAsPresetMutation.error.message) || ''
 
-  // Auto-dismiss banners
-  useEffect(() => { if (saveSuccess)   { const t = setTimeout(() => setSaveSuccess(false),  4000); return () => clearTimeout(t) } }, [saveSuccess])
-  useEffect(() => { if (quickSuccess)  { const t = setTimeout(() => setQuickSuccess(false), 4000); return () => clearTimeout(t) } }, [quickSuccess])
-
   // All exercises merged (static + custom)
   const allExercises = [
     ...EXERCISES,
@@ -160,7 +168,7 @@ export default function Workouts() {
   }
 
   function removeExercise(id) { setPlan(prev => prev.filter(e => e.id !== id)) }
-  function clearPlan() { setPlan([]); setSaveSuccess(false); setSaveClientError(''); setSaveAsPreset(false) }
+  function clearPlan() { setPlan([]); setSaveClientError(''); setSaveAsPreset(false) }
 
   // Generator
   function toggleGenCategory(cat) {
@@ -187,7 +195,7 @@ export default function Workouts() {
     const splitDay = cats.length === 1 ? cats[0].toLowerCase().replace(/ /g, '_') : 'custom'
     const payload = { date: selectedDate, splitDay, exercises: plan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) }
     logWorkoutMutation.mutate(payload, {
-      onSuccess: () => setSaveSuccess(true),
+      onSuccess: () => toast.success('Workout saved to calendar. Nice work!'),
     })
   }
 
@@ -200,6 +208,7 @@ export default function Workouts() {
       onSuccess: () => {
         setSaveAsPreset(false)
         setSaveAsPresetName('')
+        toast.success('Plan saved as preset')
       },
     })
   }
@@ -217,7 +226,7 @@ export default function Workouts() {
     quickLogMutation.mutate({ date: selectedDate, splitDay, exercises: [] }, {
       onSuccess: () => {
         setQuickCategories(new Set())
-        setQuickSuccess(true)
+        toast.success('Workout logged. Keep it up!')
       },
     })
   }
@@ -234,6 +243,7 @@ export default function Workouts() {
         onSuccess: () => {
           setExForm(EMPTY_EX_FORM)
           closePanel()
+          toast.success('Custom exercise created')
         },
       },
     )
@@ -282,7 +292,7 @@ export default function Workouts() {
     if (!presetName.trim()) { setPresetClientError('Enter a preset name.'); return }
     setPresetClientError('')
     const payload = { name: presetName.trim(), exercises: presetPlan.map(e => ({ id: e.id, name: e.name, category: e.category, muscles: e.muscles })) }
-    const onSuccess = () => closePanel()
+    const onSuccess = () => { closePanel(); toast.success(editingPreset ? 'Preset updated' : 'Preset saved') }
     if (editingPreset) {
       updateWorkoutPresetMutation.mutate({ id: editingPreset.id, data: payload }, { onSuccess })
     } else {
@@ -306,64 +316,44 @@ export default function Workouts() {
 
   return (
     <div className="space-y-6">
-
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Workout Planner</h1>
-        <input
-          type="date"
-          value={selectedDate}
-          max={today}
-          onChange={e => setSelectedDate(e.target.value)}
-          style={{ fontSize: '16px' }}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
-        />
+        <h1 className="text-2xl font-bold">Workout Planner</h1>
+        <Input type="date" value={selectedDate} max={today} onChange={e => setSelectedDate(e.target.value)} className="w-auto" />
       </div>
 
       {/* Today's Plan */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-700">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-          <h2 className="text-sm font-bold text-gray-900 dark:text-white">Today's Plan</h2>
+      <Card className="py-0 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-sm font-bold">Today's Plan</h2>
           <div className="flex gap-2">
-            <button type="button" onClick={openPresetsPanel}
-              className="text-xs font-semibold text-violet-600 hover:text-violet-700 border border-violet-200 hover:border-violet-300 rounded-lg px-3 py-1.5 transition-colors dark:text-violet-400 dark:border-violet-700 dark:hover:border-violet-600">
-              Presets
-            </button>
-            <button type="button" onClick={() => setShowGenerator(true)}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-300 rounded-lg px-3 py-1.5 transition-colors dark:text-indigo-400 dark:border-indigo-700 dark:hover:border-indigo-600">
-              Generate
-            </button>
+            <Button type="button" variant="outline" size="sm" onClick={openPresetsPanel}>Presets</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowGenerator(true)}>Generate</Button>
             {plan.length > 0 && (
-              <button type="button" onClick={clearPlan}
-                className="text-xs font-semibold text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg px-3 py-1.5 transition-colors dark:text-gray-400 dark:border-gray-600 dark:hover:text-red-400 dark:hover:border-red-800">
-                Clear
-              </button>
+              <Button type="button" variant="outline" size="sm" onClick={clearPlan} className="text-muted-foreground hover:text-destructive">Clear</Button>
             )}
           </div>
         </div>
 
         <div className="px-5 py-4">
           {plan.length === 0 ? (
-            <p className="text-sm text-gray-400 dark:text-gray-500 py-2">Your plan is empty — browse exercises below to build your workout.</p>
+            <p className="text-sm text-muted-foreground py-2">Your plan is empty — browse exercises below to build your workout.</p>
           ) : (
             <ul className="space-y-2">
               {plan.map(exercise => {
                 const colors = CATEGORY_COLORS[exercise.category] || {}
                 return (
                   <li key={exercise.id} className="flex items-center gap-3">
-                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colors.dot || 'bg-gray-400'}`} />
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-shrink-0">{exercise.name}</span>
+                    <span className={cn('size-2.5 rounded-full shrink-0', colors.dot || 'bg-muted-foreground')} />
+                    <span className="text-sm font-semibold shrink-0">{exercise.name}</span>
                     <div className="flex flex-wrap gap-1 flex-1 min-w-0">
                       {exercise.muscles.map(m => (
-                        <span key={m} className="rounded-full bg-gray-100 text-gray-500 text-xs px-2 py-0.5 dark:bg-gray-700 dark:text-gray-400">{m}</span>
+                        <span key={m} className="rounded-full bg-muted text-muted-foreground text-xs px-2 py-0.5">{m}</span>
                       ))}
                     </div>
-                    <button type="button" onClick={() => removeExercise(exercise.id)} aria-label={`Remove ${exercise.name}`}
-                      className="flex-shrink-0 text-gray-300 hover:text-red-500 transition-colors ml-2 dark:text-gray-600 dark:hover:text-red-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                      </svg>
-                    </button>
+                    <Button type="button" size="icon-sm" variant="ghost" onClick={() => removeExercise(exercise.id)} aria-label={`Remove ${exercise.name}`} className="shrink-0 text-muted-foreground hover:text-destructive">
+                      <X />
+                    </Button>
                   </li>
                 )
               })}
@@ -373,105 +363,88 @@ export default function Workouts() {
 
         {plan.length > 0 && (
           <div className="px-5 pb-5 space-y-3">
-            {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
-            {saveSuccess && (
-              <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm font-medium dark:bg-green-900/20 dark:border-green-800 dark:text-green-400">
-                Workout saved to calendar. Nice work!
-              </div>
-            )}
+            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
             {/* Save as preset inline form */}
             {saveAsPreset ? (
               <div className="space-y-2">
-                <input
+                <Input
                   type="text"
                   placeholder="Preset name..."
                   value={saveAsPresetName}
                   onChange={e => setSaveAsPresetName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSaveAsPreset()}
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
+                  className="h-9"
                 />
-                {saveAsPresetErr && <p className="text-xs text-red-600 dark:text-red-400">{saveAsPresetErr}</p>}
+                {saveAsPresetErr && <p className="text-xs text-destructive">{saveAsPresetErr}</p>}
                 <div className="flex gap-2">
-                  <button type="button" onClick={handleSaveAsPreset} disabled={saveAsPresetSaving}
-                    className="flex-1 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-3 py-2 transition-colors">
+                  <Button type="button" onClick={handleSaveAsPreset} disabled={saveAsPresetSaving} className="flex-1">
                     {saveAsPresetSaving ? 'Saving...' : 'Save Preset'}
-                  </button>
-                  <button type="button" onClick={() => { setSaveAsPreset(false); setSaveAsPresetName(''); setSaveAsPresetClientErr('')}}
-                    className="border border-gray-200 hover:border-gray-300 text-gray-600 text-sm font-semibold rounded-lg px-3 py-2 transition-colors dark:border-gray-600 dark:hover:border-gray-500 dark:text-gray-300">
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => { setSaveAsPreset(false); setSaveAsPresetName(''); setSaveAsPresetClientErr('') }}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <button type="button" onClick={() => setSaveAsPreset(true)}
-                className="w-full border border-violet-200 hover:border-violet-300 text-violet-600 hover:text-violet-700 text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors dark:border-violet-700 dark:hover:border-violet-600 dark:text-violet-400 dark:hover:text-violet-300">
+              <Button type="button" variant="outline" onClick={() => setSaveAsPreset(true)} className="w-full text-primary border-primary/30 hover:border-primary hover:text-primary">
                 Save Plan as Preset
-              </button>
+              </Button>
             )}
 
-            <button type="button" onClick={handleSavePlan} disabled={saving}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-3 transition-colors">
+            <Button type="button" onClick={handleSavePlan} disabled={saving} className="w-full h-10">
               {saving ? 'Saving...' : 'Save to Calendar'}
-            </button>
+            </Button>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Quick Log by Category */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-4 dark:bg-gray-900 dark:border-gray-700">
-        <div>
-          <h2 className="text-sm font-bold text-gray-900 dark:text-white">Quick Log by Category</h2>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Tap the categories you trained today without selecting individual exercises.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map(cat => {
-            const isSelected = quickCategories.has(cat)
-            const colors = CATEGORY_COLORS[cat] || {}
-            return (
-              <button key={cat} type="button" onClick={() => toggleQuickCategory(cat)}
-                className={['flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-all',
-                  isSelected ? `${colors.badge} border-transparent` : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500'].join(' ')}>
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${colors.dot || 'bg-gray-400'}`} />
-                {cat}
-              </button>
-            )
-          })}
-        </div>
-        {quickError && <p className="text-sm text-red-600 dark:text-red-400">{quickError}</p>}
-        {quickSuccess && (
-          <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm font-medium dark:bg-green-900/20 dark:border-green-800 dark:text-green-400">
-            Workout logged. Keep it up!
+      <Card>
+        <CardContent className="space-y-4">
+          <div>
+            <h2 className="text-sm font-bold">Quick Log by Category</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Tap the categories you trained today without selecting individual exercises.</p>
           </div>
-        )}
-        {quickCategories.size > 0 && (
-          <button type="button" onClick={handleQuickLog} disabled={quickSaving}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-3 transition-colors">
-            {quickSaving ? 'Saving...' : `Log ${[...quickCategories].join(', ')}`}
-          </button>
-        )}
-      </div>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIES.map(cat => {
+              const isSelected = quickCategories.has(cat)
+              const colors = CATEGORY_COLORS[cat] || {}
+              return (
+                <button key={cat} type="button" onClick={() => toggleQuickCategory(cat)}
+                  className={cn('flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-colors',
+                    isSelected ? `${colors.badge} border-transparent` : 'border-border text-muted-foreground hover:border-muted-foreground/40')}>
+                  <span className={cn('size-2 rounded-full shrink-0', colors.dot || 'bg-muted-foreground')} />
+                  {cat}
+                </button>
+              )
+            })}
+          </div>
+          {quickError && <p className="text-sm text-destructive">{quickError}</p>}
+          {quickCategories.size > 0 && (
+            <Button type="button" onClick={handleQuickLog} disabled={quickSaving} className="w-full h-10">
+              {quickSaving ? 'Saving...' : `Log ${[...quickCategories].join(', ')}`}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Exercise Library */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Exercise Library</h2>
-          <button type="button" onClick={openNewExercisePanel}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-300 rounded-lg px-3 py-1.5 transition-colors dark:text-indigo-400 dark:border-indigo-700 dark:hover:border-indigo-600">
-            + Custom Exercise
-          </button>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Exercise Library</h2>
+          <Button type="button" variant="outline" size="sm" onClick={openNewExercisePanel}>+ Custom Exercise</Button>
         </div>
 
         {/* Category tabs */}
-        <div className="flex gap-0 border-b border-gray-200 dark:border-gray-700 mb-4 overflow-x-auto">
+        <div className="flex gap-0 border-b border-border mb-4 overflow-x-auto">
           {['All', ...CATEGORIES].map(cat => {
             const isActive = activeCategory === cat
             const colors = cat !== 'All' ? CATEGORY_COLORS[cat] : null
             return (
               <button key={cat} type="button" onClick={() => setActiveCategory(cat)}
-                className={['px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
-                  isActive && colors ? `${colors.tab} border-b-2` : isActive ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'].join(' ')}>
+                className={cn('px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
+                  isActive && colors ? colors.tab : isActive ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
                 {cat}
               </button>
             )
@@ -485,37 +458,35 @@ export default function Workouts() {
             const colors = CATEGORY_COLORS[exercise.category] || {}
             return (
               <div key={exercise.id}
-                className={['bg-white border rounded-xl p-4 cursor-pointer transition-all relative dark:bg-gray-900',
-                  isAdded ? 'border-indigo-200 dark:border-indigo-800/50' : 'border-gray-200 hover:border-indigo-300 hover:shadow-sm dark:border-gray-700 dark:hover:border-indigo-700'].join(' ')}
+                className={cn('bg-card rounded-xl p-4 cursor-pointer transition-colors relative ring-1',
+                  isAdded ? 'ring-primary/40' : 'ring-foreground/10 hover:ring-primary/30')}
                 onClick={() => toggleExercise(exercise)}>
                 {/* Custom delete button */}
                 {exercise.isCustom && (
                   <button type="button"
                     onClick={e => { e.stopPropagation(); handleDeleteCustomExercise(exercise.dbId || exercise.id) }}
-                    className="absolute top-2 right-2 text-gray-300 hover:text-red-500 transition-colors dark:text-gray-600 dark:hover:text-red-400"
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors"
                     aria-label="Delete custom exercise">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                    </svg>
+                    <X className="size-3.5" />
                   </button>
                 )}
-                <p className={`text-xs font-medium mb-1 ${colors.text || 'text-gray-500'}`}>{exercise.category}</p>
+                <p className={cn('text-xs font-medium mb-1', colors.text || 'text-muted-foreground')}>{exercise.category}</p>
                 {exercise.isCustom && (
-                  <span className="inline-block text-xs font-medium bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 mb-1 dark:bg-gray-700 dark:text-gray-400">Custom</span>
+                  <span className="inline-block text-xs font-medium bg-muted text-muted-foreground rounded-sm px-1.5 py-0.5 mb-1">Custom</span>
                 )}
-                <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight mb-2">{exercise.name}</p>
+                <p className="text-sm font-semibold leading-tight mb-2">{exercise.name}</p>
                 <div className="flex flex-wrap gap-1 mb-3">
                   {exercise.muscles.map(m => (
-                    <span key={m} className="rounded-full bg-gray-100 text-gray-500 text-xs px-2 py-0.5 dark:bg-gray-700 dark:text-gray-400">{m}</span>
+                    <span key={m} className="rounded-full bg-muted text-muted-foreground text-xs px-2 py-0.5">{m}</span>
                   ))}
                 </div>
                 {isAdded ? (
-                  <span className="inline-block text-xs font-semibold rounded-full bg-indigo-50 text-indigo-700 px-2.5 py-0.5 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+                  <span className="inline-block text-xs font-semibold rounded-full bg-primary/10 text-primary px-2.5 py-0.5">
                     ✓ Added — click to remove
                   </span>
                 ) : (
                   <button type="button" onClick={e => { e.stopPropagation(); toggleExercise(exercise) }}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors dark:text-indigo-400 dark:hover:text-indigo-300">
+                    className="text-xs font-semibold text-primary hover:underline">
                     + Add
                   </button>
                 )}
@@ -527,338 +498,271 @@ export default function Workouts() {
 
       {/* Workout History */}
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Workout History</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Workout History</h2>
         {historyLoading ? (
-          <div className="text-gray-400 dark:text-gray-500 text-sm animate-pulse">Loading history...</div>
+          <div className="space-y-2">
+            {[0, 1, 2].map(i => <Skeleton key={i} className="h-16 rounded-xl" />)}
+          </div>
         ) : history.length > 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-700">
-            <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+          <Card className="py-0 overflow-hidden">
+            <ul className="divide-y divide-border">
               {history.map((session, idx) => {
                 const exerciseNames = Array.isArray(session.exercises) ? session.exercises.map(e => e.name).filter(Boolean).join(', ') : ''
                 return (
                   <li key={session.id || idx} className="px-5 py-4">
                     <div className="flex items-baseline justify-between gap-4">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{toHumanLabel(session.splitDay)}</p>
-                      <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{formatDateDisplay(session.date)}</span>
+                      <p className="text-sm font-semibold">{toHumanLabel(session.splitDay)}</p>
+                      <span className="text-xs text-muted-foreground shrink-0">{formatDateDisplay(session.date)}</span>
                     </div>
                     {exerciseNames ? (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {truncate(exerciseNames, 60)}
-                        <span className="ml-1 text-gray-400 dark:text-gray-500">({session.exercises.length} exercise{session.exercises.length !== 1 ? 's' : ''})</span>
+                        <span className="ml-1 text-muted-foreground/70">({session.exercises.length} exercise{session.exercises.length !== 1 ? 's' : ''})</span>
                       </p>
                     ) : (
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Category log — no exercises recorded</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Category log — no exercises recorded</p>
                     )}
                   </li>
                 )
               })}
             </ul>
-          </div>
+          </Card>
         ) : (
-          <p className="text-sm text-gray-400 dark:text-gray-500">No workouts logged yet.</p>
+          <p className="text-sm text-muted-foreground">No workouts logged yet.</p>
         )}
       </div>
 
       {/* Random Workout Generator dialog */}
-      {showGenerator && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5 dark:bg-gray-800">
-            <div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">Random Workout Generator</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Select the categories you want to train, then adjust the exercise count for each.</p>
-            </div>
+      <Dialog open={showGenerator} onOpenChange={setShowGenerator}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Random Workout Generator</DialogTitle>
+            <DialogDescription>Select the categories you want to train, then adjust the exercise count for each.</DialogDescription>
+          </DialogHeader>
 
-            {/* Step 1 — category toggles */}
+          {/* Step 1 — category toggles */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Categories</p>
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map(cat => {
+                const isOn = genEnabled.has(cat)
+                const colors = CATEGORY_COLORS[cat] || {}
+                return (
+                  <button key={cat} type="button" onClick={() => toggleGenCategory(cat)}
+                    className={cn('flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors',
+                      isOn ? `${colors.badge} border-transparent` : 'border-border text-muted-foreground hover:border-muted-foreground/40')}>
+                    <span className={cn('size-2 rounded-full shrink-0', isOn ? colors.dot : 'bg-muted-foreground/40')} />
+                    {cat}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Step 2 — counts for enabled categories */}
+          {genEnabled.size > 0 && (
             <div>
-              <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Categories</p>
-              <div className="flex flex-wrap gap-2">
-                {CATEGORIES.map(cat => {
-                  const isOn = genEnabled.has(cat)
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Exercises per category</p>
+              <div className="space-y-2">
+                {CATEGORIES.filter(cat => genEnabled.has(cat)).map(cat => {
                   const colors = CATEGORY_COLORS[cat] || {}
+                  const pool = allExercises.filter(e => e.category === cat).length
                   return (
-                    <button key={cat} type="button" onClick={() => toggleGenCategory(cat)}
-                      className={['flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-all',
-                        isOn ? `${colors.badge} border-transparent` : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 dark:hover:border-gray-500'].join(' ')}>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isOn ? colors.dot : 'bg-gray-300'}`} />
-                      {cat}
-                    </button>
+                    <div key={cat} className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={cn('size-2.5 rounded-full shrink-0', colors.dot || 'bg-muted-foreground')} />
+                        <span className={cn('text-sm font-medium', colors.text || 'text-foreground')}>{cat}</span>
+                        <span className="text-xs text-muted-foreground">({pool} available)</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button type="button" size="icon-sm" variant="outline"
+                          onClick={() => setGenCounts(prev => ({ ...prev, [cat]: Math.max(1, (prev[cat] || 1) - 1) }))}
+                          aria-label={`Fewer ${cat}`}>
+                          <Minus />
+                        </Button>
+                        <span className="w-8 text-center text-sm font-semibold">{genCounts[cat] ?? 1}</span>
+                        <Button type="button" size="icon-sm" variant="outline"
+                          onClick={() => setGenCounts(prev => ({ ...prev, [cat]: Math.min(pool, (prev[cat] || 1) + 1) }))}
+                          aria-label={`More ${cat}`}>
+                          <Plus />
+                        </Button>
+                      </div>
+                    </div>
                   )
                 })}
               </div>
             </div>
+          )}
 
-            {/* Step 2 — counts for enabled categories */}
-            {genEnabled.size > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Exercises per category</p>
-                <div className="space-y-2">
-                  {CATEGORIES.filter(cat => genEnabled.has(cat)).map(cat => {
-                    const colors = CATEGORY_COLORS[cat] || {}
-                    const pool = allExercises.filter(e => e.category === cat).length
+          <div className="flex gap-3 pt-1">
+            <Button type="button" onClick={generateWorkout} disabled={!genEnabled.size} className="flex-1">Generate</Button>
+            <Button type="button" variant="outline" onClick={() => setShowGenerator(false)} className="flex-1">Cancel</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Slide-over Panel */}
+      <Sheet open={panelMode !== null} onOpenChange={(open) => { if (!open) closePanel() }}>
+        <SheetContent className="w-full sm:max-w-md p-0 gap-0">
+
+          {/* Panel: Presets list */}
+          {panelMode === 'presets' && (
+            <>
+              <SheetHeader className="flex-row items-center justify-between border-b pr-12">
+                <SheetTitle>Workout Presets</SheetTitle>
+                <Button type="button" variant="outline" size="sm" onClick={() => openNewPresetPanel()}>+ New Preset</Button>
+              </SheetHeader>
+              <div className="flex-1 overflow-y-auto p-5">
+                {presetsLoading ? (
+                  <div className="space-y-3">{[0, 1].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+                ) : presets.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-muted-foreground mb-4">No workout presets yet.</p>
+                    <button type="button" onClick={() => openNewPresetPanel()} className="text-sm font-semibold text-primary hover:underline">
+                      Create your first preset →
+                    </button>
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {presets.map(preset => {
+                      const exList = Array.isArray(preset.exercises) ? preset.exercises : []
+                      const cats = [...new Set(exList.map(e => e.category))].filter(Boolean)
+                      return (
+                        <li key={preset.id} className="bg-muted/50 rounded-xl p-4 space-y-3">
+                          <div>
+                            <p className="text-sm font-bold">{preset.name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {exList.length} exercise{exList.length !== 1 ? 's' : ''}
+                              {cats.length > 0 && ` · ${cats.join(', ')}`}
+                            </p>
+                            {exList.length > 0 && (
+                              <p className="text-xs text-muted-foreground/80 mt-1">{truncate(exList.map(e => e.name).join(', '), 80)}</p>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button type="button" size="sm" onClick={() => handleUsePreset(preset)} className="flex-1">Load to Plan</Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => openNewPresetPanel(preset)}>Edit</Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => handleDeletePreset(preset.id)} className="text-destructive">Delete</Button>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Panel: New / Edit preset */}
+          {panelMode === 'new-preset' && (
+            <>
+              <SheetHeader className="flex-row items-center gap-3 border-b pr-12">
+                <Button type="button" size="icon-sm" variant="ghost" onClick={() => setPanelMode('presets')} aria-label="Back to presets">
+                  <ArrowLeft />
+                </Button>
+                <SheetTitle className="flex-1">{editingPreset ? 'Edit Preset' : 'New Preset'}</SheetTitle>
+              </SheetHeader>
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                <Input type="text" placeholder="Preset name..." value={presetName} onChange={e => setPresetName(e.target.value)} className="h-9" />
+
+                {/* Selected exercises */}
+                {presetPlan.length > 0 && (
+                  <div className="bg-muted/50 rounded-xl p-3 space-y-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Selected ({presetPlan.length})</p>
+                    {presetPlan.map(e => {
+                      const colors = CATEGORY_COLORS[e.category] || {}
+                      return (
+                        <div key={e.id} className="flex items-center gap-2">
+                          <span className={cn('size-2 rounded-full shrink-0', colors.dot || 'bg-muted-foreground')} />
+                          <span className="text-sm flex-1">{e.name}</span>
+                          <button type="button" onClick={() => togglePresetExercise(e)} className="text-muted-foreground hover:text-destructive transition-colors">
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Category tabs (mini) */}
+                <div className="flex gap-0 border-b border-border overflow-x-auto">
+                  {['All', ...CATEGORIES].map(cat => {
+                    const isActive = presetCategory === cat
+                    const colors = cat !== 'All' ? CATEGORY_COLORS[cat] : null
                     return (
-                      <div key={cat} className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colors.dot || 'bg-gray-400'}`} />
-                          <span className={`text-sm font-medium ${colors.text || 'text-gray-700 dark:text-gray-200'}`}>{cat}</span>
-                          <span className="text-xs text-gray-400 dark:text-gray-500">({pool} available)</span>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button type="button"
-                            onClick={() => setGenCounts(prev => ({ ...prev, [cat]: Math.max(1, (prev[cat] || 1) - 1) }))}
-                            className="w-7 h-7 rounded-lg border border-gray-200 hover:border-gray-300 text-gray-500 hover:text-gray-700 text-base font-bold flex items-center justify-center transition-colors dark:border-gray-600 dark:hover:border-gray-500 dark:text-gray-400 dark:hover:text-gray-200">
-                            −
-                          </button>
-                          <span className="w-8 text-center text-sm font-semibold text-gray-900 dark:text-white">{genCounts[cat] ?? 1}</span>
-                          <button type="button"
-                            onClick={() => setGenCounts(prev => ({ ...prev, [cat]: Math.min(pool, (prev[cat] || 1) + 1) }))}
-                            className="w-7 h-7 rounded-lg border border-gray-200 hover:border-gray-300 text-gray-500 hover:text-gray-700 text-base font-bold flex items-center justify-center transition-colors dark:border-gray-600 dark:hover:border-gray-500 dark:text-gray-400 dark:hover:text-gray-200">
-                            +
-                          </button>
-                        </div>
+                      <button key={cat} type="button" onClick={() => setPresetCategory(cat)}
+                        className={cn('px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
+                          isActive && colors ? colors.tab : isActive ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                        {cat}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Exercise list (compact) */}
+                <div className="space-y-1.5">
+                  {visiblePresetExercises.map(exercise => {
+                    const isAdded = presetPlanIds.has(exercise.id)
+                    const colors = CATEGORY_COLORS[exercise.category] || {}
+                    return (
+                      <div key={exercise.id}
+                        className={cn('flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer border transition-colors',
+                          isAdded ? 'bg-primary/10 border-primary/30' : 'border-border hover:bg-accent')}
+                        onClick={() => togglePresetExercise(exercise)}>
+                        <span className={cn('size-2 rounded-full shrink-0', colors.dot || 'bg-muted-foreground')} />
+                        <span className="text-sm flex-1">{exercise.name}</span>
+                        {exercise.isCustom && <span className="text-xs text-muted-foreground">Custom</span>}
+                        {isAdded && <Check className="size-4 text-primary shrink-0" />}
                       </div>
                     )
                   })}
                 </div>
+
+                {presetError && <p className="text-sm text-destructive">{presetError}</p>}
               </div>
-            )}
 
-            <div className="flex gap-3 pt-1">
-              <button type="button" onClick={generateWorkout} disabled={!genEnabled.size}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors">
-                Generate
-              </button>
-              <button type="button" onClick={() => setShowGenerator(false)}
-                className="flex-1 border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors dark:border-gray-600 dark:hover:border-gray-500 dark:text-gray-200">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              <div className="px-5 py-4 border-t border-border shrink-0">
+                <Button type="button" onClick={handleSavePreset} disabled={presetSaving} className="w-full h-10">
+                  {presetSaving ? 'Saving...' : (editingPreset ? 'Update Preset' : 'Save Preset')}
+                </Button>
+              </div>
+            </>
+          )}
 
-      {/* Slide-over Panel */}
-      {panelMode && (
-        <div className="fixed inset-0 z-40 flex">
-          <div className="flex-1 bg-black/40" onClick={closePanel} />
-          <div className="w-full max-w-md bg-white shadow-2xl flex flex-col h-full overflow-hidden dark:bg-gray-900">
-
-            {/* Panel: Presets list */}
-            {panelMode === 'presets' && (
-              <>
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
-                  <h2 className="text-base font-bold text-gray-900 dark:text-white">Workout Presets</h2>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => openNewPresetPanel()}
-                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-300 rounded-lg px-3 py-1.5 transition-colors dark:text-indigo-400 dark:border-indigo-700 dark:hover:border-indigo-600">
-                      + New Preset
-                    </button>
-                    <button type="button" onClick={closePanel}
-                      className="text-gray-400 hover:text-gray-600 transition-colors p-1 dark:text-gray-500 dark:hover:text-gray-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                      </svg>
-                    </button>
-                  </div>
+          {/* Panel: New custom exercise */}
+          {panelMode === 'new-exercise' && (
+            <>
+              <SheetHeader className="border-b pr-12">
+                <SheetTitle>New Custom Exercise</SheetTitle>
+              </SheetHeader>
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ex-name">Exercise Name</Label>
+                  <Input id="ex-name" type="text" placeholder="e.g. Bulgarian Split Squat" value={exForm.name} onChange={e => setExForm(f => ({ ...f, name: e.target.value }))} className="h-9" />
                 </div>
-                <div className="flex-1 overflow-y-auto p-5">
-                  {presetsLoading ? (
-                    <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading presets...</p>
-                  ) : presets.length === 0 ? (
-                    <div className="text-center py-12">
-                      <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">No workout presets yet.</p>
-                      <button type="button" onClick={() => openNewPresetPanel()}
-                        className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
-                        Create your first preset →
-                      </button>
-                    </div>
-                  ) : (
-                    <ul className="space-y-3">
-                      {presets.map(preset => {
-                        const exList = Array.isArray(preset.exercises) ? preset.exercises : []
-                        const cats = [...new Set(exList.map(e => e.category))].filter(Boolean)
-                        return (
-                          <li key={preset.id} className="bg-gray-50 rounded-xl p-4 space-y-3 dark:bg-gray-800">
-                            <div>
-                              <p className="text-sm font-bold text-gray-900 dark:text-white">{preset.name}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                {exList.length} exercise{exList.length !== 1 ? 's' : ''}
-                                {cats.length > 0 && ` · ${cats.join(', ')}`}
-                              </p>
-                              {exList.length > 0 && (
-                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{truncate(exList.map(e => e.name).join(', '), 80)}</p>
-                              )}
-                            </div>
-                            <div className="flex gap-2">
-                              <button type="button" onClick={() => handleUsePreset(preset)}
-                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg px-3 py-2 transition-colors">
-                                Load to Plan
-                              </button>
-                              <button type="button" onClick={() => openNewPresetPanel(preset)}
-                                className="border border-gray-200 hover:border-gray-300 text-gray-600 text-xs font-semibold rounded-lg px-3 py-2 transition-colors dark:border-gray-600 dark:hover:border-gray-500 dark:text-gray-300">
-                                Edit
-                              </button>
-                              <button type="button" onClick={() => handleDeletePreset(preset.id)}
-                                className="border border-red-100 hover:border-red-200 text-red-500 text-xs font-semibold rounded-lg px-3 py-2 transition-colors dark:border-red-900/50 dark:hover:border-red-800 dark:text-red-400">
-                                Delete
-                              </button>
-                            </div>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="ex-category">Category</Label>
+                  <select id="ex-category" value={exForm.category} onChange={e => setExForm(f => ({ ...f, category: e.target.value }))} className={SELECT_CLASS}>
+                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
                 </div>
-              </>
-            )}
-
-            {/* Panel: New / Edit preset */}
-            {panelMode === 'new-preset' && (
-              <>
-                <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
-                  <button type="button" onClick={() => setPanelMode('presets')}
-                    className="text-gray-400 hover:text-gray-600 transition-colors dark:text-gray-500 dark:hover:text-gray-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                      <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 010 1.06L8.06 10l3.72 3.72a.75.75 0 11-1.06 1.06l-4.25-4.25a.75.75 0 010-1.06l4.25-4.25a.75.75 0 011.06 0z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <h2 className="text-base font-bold text-gray-900 dark:text-white flex-1">{editingPreset ? 'Edit Preset' : 'New Preset'}</h2>
-                  <button type="button" onClick={closePanel} className="text-gray-400 hover:text-gray-600 transition-colors p-1 dark:text-gray-500 dark:hover:text-gray-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                    </svg>
-                  </button>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ex-muscles">Muscles Targeted</Label>
+                  <Input id="ex-muscles" type="text" placeholder="e.g. Quads, Glutes, Hamstrings" value={exForm.muscles} onChange={e => setExForm(f => ({ ...f, muscles: e.target.value }))} className="h-9" />
+                  <p className="text-xs text-muted-foreground">Separate multiple muscles with commas</p>
                 </div>
-                <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                  {/* Name */}
-                  <input type="text" placeholder="Preset name..." value={presetName}
-                    onChange={e => setPresetName(e.target.value)}
-                    style={{ fontSize: '16px' }}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500" />
+                {exError && <p className="text-sm text-destructive">{exError}</p>}
+              </div>
+              <div className="px-5 py-4 border-t border-border shrink-0">
+                <Button type="button" onClick={handleCreateExercise} disabled={exSaving} className="w-full h-10">
+                  {exSaving ? 'Saving...' : 'Create Exercise'}
+                </Button>
+              </div>
+            </>
+          )}
 
-                  {/* Selected exercises */}
-                  {presetPlan.length > 0 && (
-                    <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 dark:bg-gray-800">
-                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                        Selected ({presetPlan.length})
-                      </p>
-                      {presetPlan.map(e => {
-                        const colors = CATEGORY_COLORS[e.category] || {}
-                        return (
-                          <div key={e.id} className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${colors.dot || 'bg-gray-400'}`} />
-                            <span className="text-sm text-gray-800 dark:text-gray-200 flex-1">{e.name}</span>
-                            <button type="button" onClick={() => togglePresetExercise(e)}
-                              className="text-gray-300 hover:text-red-500 transition-colors dark:text-gray-600 dark:hover:text-red-400">
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                              </svg>
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Category tabs (mini) */}
-                  <div className="flex gap-0 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
-                    {['All', ...CATEGORIES].map(cat => {
-                      const isActive = presetCategory === cat
-                      const colors = cat !== 'All' ? CATEGORY_COLORS[cat] : null
-                      return (
-                        <button key={cat} type="button" onClick={() => setPresetCategory(cat)}
-                          className={['px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
-                            isActive && colors ? `${colors.tab}` : isActive ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'].join(' ')}>
-                          {cat}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Exercise list (compact) */}
-                  <div className="space-y-1.5">
-                    {visiblePresetExercises.map(exercise => {
-                      const isAdded = presetPlanIds.has(exercise.id)
-                      const colors = CATEGORY_COLORS[exercise.category] || {}
-                      return (
-                        <div key={exercise.id}
-                          className={['flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer border transition-all',
-                            isAdded ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800/50' : 'bg-white border-gray-100 hover:border-indigo-200 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:hover:border-indigo-700 dark:hover:bg-gray-700'].join(' ')}
-                          onClick={() => togglePresetExercise(exercise)}>
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${colors.dot || 'bg-gray-400'}`} />
-                          <span className="text-sm text-gray-800 dark:text-gray-200 flex-1">{exercise.name}</span>
-                          {exercise.isCustom && <span className="text-xs text-gray-400 dark:text-gray-500">Custom</span>}
-                          {isAdded && (
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-indigo-500 flex-shrink-0">
-                              <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                            </svg>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {presetError && <p className="text-sm text-red-600 dark:text-red-400">{presetError}</p>}
-                </div>
-
-                <div className="px-5 py-4 border-t border-gray-100 dark:border-gray-700 flex-shrink-0">
-                  <button type="button" onClick={handleSavePreset} disabled={presetSaving}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-3 transition-colors">
-                    {presetSaving ? 'Saving...' : (editingPreset ? 'Update Preset' : 'Save Preset')}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* Panel: New custom exercise */}
-            {panelMode === 'new-exercise' && (
-              <>
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
-                  <h2 className="text-base font-bold text-gray-900 dark:text-white">New Custom Exercise</h2>
-                  <button type="button" onClick={closePanel} className="text-gray-400 hover:text-gray-600 transition-colors p-1 dark:text-gray-500 dark:hover:text-gray-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Exercise Name</label>
-                    <input type="text" placeholder="e.g. Bulgarian Split Squat" value={exForm.name}
-                      onChange={e => setExForm(f => ({ ...f, name: e.target.value }))}
-                      style={{ fontSize: '16px' }}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Category</label>
-                    <select value={exForm.category} onChange={e => setExForm(f => ({ ...f, category: e.target.value }))}
-                      style={{ fontSize: '16px' }}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500">
-                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Muscles Targeted</label>
-                    <input type="text" placeholder="e.g. Quads, Glutes, Hamstrings" value={exForm.muscles}
-                      onChange={e => setExForm(f => ({ ...f, muscles: e.target.value }))}
-                      style={{ fontSize: '16px' }}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500" />
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Separate multiple muscles with commas</p>
-                  </div>
-                  {exError && <p className="text-sm text-red-600 dark:text-red-400">{exError}</p>}
-                </div>
-                <div className="px-5 py-4 border-t border-gray-100 dark:border-gray-700 flex-shrink-0">
-                  <button type="button" onClick={handleCreateExercise} disabled={exSaving}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-3 transition-colors">
-                    {exSaving ? 'Saving...' : 'Create Exercise'}
-                  </button>
-                </div>
-              </>
-            )}
-
-          </div>
-        </div>
-      )}
-
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

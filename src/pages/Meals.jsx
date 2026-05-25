@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
+import { toast } from 'sonner'
+import { ArrowLeft, Pencil, Trash2, X, Loader2 } from 'lucide-react'
 import { getFoodDetail } from '../lib/api.js'
 import {
   useMeals,
@@ -17,6 +19,15 @@ import {
   useFoodSearch,
 } from '../hooks/useMeals.js'
 import { useGoals, useUpdateGoals } from '../hooks/useGoals.js'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Separator } from '@/components/ui/separator'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { cn } from '@/lib/utils'
 
 function getTodayString() {
   const now = new Date()
@@ -27,6 +38,11 @@ function getTodayString() {
 }
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
+
+// Native <select> styled to match the shadcn token system (used for the simple
+// numeric serving/unit pickers).
+const SELECT_CLASS =
+  'h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30'
 
 const EMPTY_CUSTOM_SERVING = {
   description: '1 serving',
@@ -49,43 +65,6 @@ const EMPTY_CUSTOM_FOOD = {
   name: '',
   brandName: '',
   servings: [{ ...EMPTY_CUSTOM_SERVING }],
-}
-
-function TrashIcon({ className = 'w-4 h-4' }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
-      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-    </svg>
-  )
-}
-
-function CloseIcon({ className = 'w-5 h-5' }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
-      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-    </svg>
-  )
-}
-
-function BackIcon({ className = 'w-4 h-4' }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
-      <path fillRule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clipRule="evenodd" />
-    </svg>
-  )
-}
-
-function Spinner({ className = 'w-3 h-3 border-2 border-current border-t-transparent' }) {
-  return <span className={`${className} rounded-full animate-spin inline-block`} />
-}
-
-function PencilIcon({ className = 'w-4 h-4' }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
-      <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
-      <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" />
-    </svg>
-  )
 }
 
 function defaultServingIdx(servings) {
@@ -408,13 +387,13 @@ export default function Meals() {
       ...buildLogPayload(chosenFood, chosenServingIdx, q),
     }
     addMealMutation.mutate(payload, {
-      onSuccess: () => closeSlideOver(),
+      onSuccess: () => { closeSlideOver(); toast.success(`Added to ${slideOver.mealType}`) },
     })
   }
 
   // ── Delete a meal entry ──
   function handleDelete(id) {
-    deleteMealMutation.mutate(id)
+    deleteMealMutation.mutate(id, { onSuccess: () => toast.success('Entry removed') })
   }
 
   // ── Custom-food editor ──
@@ -521,7 +500,7 @@ export default function Meals() {
     }
     setCustomFoodClientError('')
     const payload = buildCustomFoodPayload()
-    const onSuccess = () => setPanelMode('search')
+    const onSuccess = () => { setPanelMode('search'); toast.success('Custom food saved') }
     if (customFoodForm.id) {
       updateCustomFoodMutation.mutate({ id: customFoodForm.id, data: payload }, { onSuccess })
     } else {
@@ -538,7 +517,7 @@ export default function Meals() {
     setPresetClientError('')
     logPresetMutation.mutate(
       { presetId, date, mealType: slideOver.mealType },
-      { onSuccess: () => closeSlideOver() },
+      { onSuccess: () => { closeSlideOver(); toast.success('Preset logged') } },
     )
   }
 
@@ -632,7 +611,7 @@ export default function Meals() {
       name,
       items: presetForm.items.map(it => ({ servingId: it.servingId, quantity: it.quantity })),
     }
-    const onSuccess = () => setPanelMode('presets')
+    const onSuccess = () => { setPanelMode('presets'); toast.success('Preset saved') }
     if (presetForm.id) {
       updatePresetMutation.mutate({ id: presetForm.id, data: payload }, { onSuccess })
     } else {
@@ -662,6 +641,7 @@ export default function Meals() {
           setNotice(`Saved preset, but ${dropped} item${dropped === 1 ? '' : 's'} could not be included (their food was deleted).`)
         } else {
           setNotice('')
+          toast.success('Preset saved')
         }
       },
       onError: (err) => {
@@ -683,7 +663,7 @@ export default function Meals() {
       fatGoal:    toNullableNumber(goalsForm.fatGoal),
     }
     updateGoalsMutation.mutate(payload, {
-      onSuccess: () => setGoalsEditing(false),
+      onSuccess: () => { setGoalsEditing(false); toast.success('Goals saved') },
     })
   }
 
@@ -693,28 +673,26 @@ export default function Meals() {
   function renderSearchPanel() {
     return (
       <>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Search food...</label>
-          <input
+        <div className="space-y-1.5">
+          <Label htmlFor="food-search">Search food...</Label>
+          <Input
+            id="food-search"
             type="text"
             value={searchQuery}
             onChange={handleSearchInput}
             placeholder="e.g. chicken breast, banana"
-            style={{ fontSize: '16px' }}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-500"
+            className="h-9"
           />
         </div>
 
         {searchLoading && (
-          <p className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">Searching...</p>
+          <p className="text-xs text-muted-foreground animate-pulse">Searching...</p>
         )}
 
-        {searchError && (
-          <p className="text-xs text-red-600">{searchError}</p>
-        )}
+        {searchError && <p className="text-xs text-destructive">{searchError}</p>}
 
         {!searchLoading && searchResults.length > 0 && (
-          <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
             {searchResults.map((food) => {
               const p = food.defaultPreview
               return (
@@ -730,13 +708,13 @@ export default function Meals() {
                       foodUrl: food.foodUrl,
                       servings: [],
                     })}
-                    className="w-full text-left px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                    className="w-full text-left px-4 py-3 hover:bg-accent transition-colors"
                   >
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    <p className="text-sm font-medium">
                       {food.foodName}
-                      {food.brandName ? <span className="text-gray-400 dark:text-gray-500"> · {food.brandName}</span> : null}
+                      {food.brandName ? <span className="text-muted-foreground"> · {food.brandName}</span> : null}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       {p ? `Per ${p.description} · ${fmt(p.calories)} kcal · ${fmt(p.protein, 'g')} protein` : 'Tap to load servings'}
                     </p>
                   </button>
@@ -748,28 +726,28 @@ export default function Meals() {
 
         {!searchLoading && searchQuery.trim() && !searchError && (
           searchQuery.trim().length < 2 ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500">Keep typing…</p>
+            <p className="text-xs text-muted-foreground">Keep typing…</p>
           ) : searchResults.length === 0 && debouncedSearchQuery.length >= 2 ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500">No results found.</p>
+            <p className="text-xs text-muted-foreground">No results found.</p>
           ) : null
         )}
 
         <button
           type="button"
           onClick={() => openCustomFoodEditor(null)}
-          className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
+          className="text-xs font-medium text-primary hover:underline"
         >
           + Create custom food
         </button>
 
-        <hr className="border-gray-200 dark:border-gray-700" />
+        <Separator />
 
         <div>
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">My Foods</h3>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">My Foods</h3>
           {customFoods.length === 0 ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500">No saved foods yet.</p>
+            <p className="text-xs text-muted-foreground">No saved foods yet.</p>
           ) : (
-            <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
               {customFoods.map(food => {
                 const d = food.servings[defaultServingIdx(food.servings)]
                 return (
@@ -777,34 +755,29 @@ export default function Meals() {
                     <button
                       type="button"
                       onClick={() => pickFoodForLog(customFoodToChosen(food))}
-                      className="flex-1 min-w-0 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded px-1 py-0.5 transition-colors"
+                      className="flex-1 min-w-0 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
                     >
-                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                      <p className="text-sm font-medium truncate">{food.name}</p>
+                      <p className="text-xs text-muted-foreground">
                         {d ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, 'g')} protein` : ''}
                         {food.servings.length > 1 ? ` · ${food.servings.length} servings` : ''}
                       </p>
                     </button>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button type="button" size="icon-sm" variant="ghost" onClick={() => openCustomFoodEditor(food)} aria-label={`Edit ${food.name}`}>
+                        <Pencil />
+                      </Button>
+                      <Button
                         type="button"
-                        onClick={() => openCustomFoodEditor(food)}
-                        aria-label={`Edit ${food.name}`}
-                        className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                      >
-                        <PencilIcon />
-                      </button>
-                      <button
-                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
                         onClick={() => handleDeleteCustomFood(food.id)}
                         disabled={deletingCustomFoodId === food.id}
                         aria-label={`Delete ${food.name}`}
-                        className="w-7 h-7 flex items-center justify-center rounded-md text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                        className="text-muted-foreground hover:text-destructive"
                       >
-                        {deletingCustomFoodId === food.id
-                          ? <Spinner className="w-3 h-3 border-2 border-red-400 border-t-transparent" />
-                          : <TrashIcon />}
-                      </button>
+                        {deletingCustomFoodId === food.id ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                      </Button>
                     </div>
                   </li>
                 )
@@ -829,23 +802,23 @@ export default function Meals() {
     return (
       <form onSubmit={handleLogSubmit} className="space-y-4">
         <div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          <p className="text-sm font-semibold">
             {chosenFood.foodName}
-            {chosenFood.brandName ? <span className="text-gray-400 dark:text-gray-500 font-normal"> · {chosenFood.brandName}</span> : null}
+            {chosenFood.brandName ? <span className="text-muted-foreground font-normal"> · {chosenFood.brandName}</span> : null}
           </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {chosenFood.source === 'custom' ? 'My Food' : 'FatSecret'}
           </p>
         </div>
 
         {chosenFood.servings.length > 1 ? (
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Serving</label>
+          <div className="space-y-1.5">
+            <Label htmlFor="serving-select">Serving</Label>
             <select
+              id="serving-select"
               value={chosenServingIdx}
               onChange={e => setChosenServingIdx(Number(e.target.value))}
-              style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+              className={SELECT_CLASS}
             >
               {chosenFood.servings.map((s, i) => (
                 <option key={s.id ?? s.fatSecretServingId ?? i} value={i}>
@@ -855,56 +828,52 @@ export default function Meals() {
             </select>
           </div>
         ) : (
-          <p className="text-xs text-gray-500 dark:text-gray-400">{serving?.description}</p>
+          <p className="text-xs text-muted-foreground">{serving?.description}</p>
         )}
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Quantity</label>
-          <input
+        <div className="space-y-1.5">
+          <Label htmlFor="quantity">Quantity</Label>
+          <Input
+            id="quantity"
             type="number"
             value={quantity}
             onChange={e => setQuantity(e.target.value)}
             min="0.25"
             step="0.25"
             inputMode="decimal"
-            style={{ fontSize: '16px' }}
-            className="w-32 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+            className="w-32 h-9"
           />
         </div>
 
-        <div className="grid grid-cols-4 gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+        <div className="grid grid-cols-4 gap-2 bg-muted rounded-lg p-3">
           <div className="text-center">
-            <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(preview.calories)}</p>
-            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">kcal</p>
+            <p className="text-base font-bold">{fmt(preview.calories)}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">kcal</p>
           </div>
           <div className="text-center">
-            <p className="text-base font-bold text-indigo-600 dark:text-indigo-400">{fmt(preview.protein, 'g')}</p>
-            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">protein</p>
+            <p className="text-base font-bold text-primary">{fmt(preview.protein, 'g')}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">protein</p>
           </div>
           <div className="text-center">
-            <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(preview.carbs, 'g')}</p>
-            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">carbs</p>
+            <p className="text-base font-bold">{fmt(preview.carbs, 'g')}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">carbs</p>
           </div>
           <div className="text-center">
-            <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(preview.fat, 'g')}</p>
-            <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">fat</p>
+            <p className="text-base font-bold">{fmt(preview.fat, 'g')}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">fat</p>
           </div>
         </div>
 
-        {submitError && <p className="text-xs text-red-600">{submitError}</p>}
+        {submitError && <p className="text-xs text-destructive">{submitError}</p>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
-        >
+        <Button type="submit" disabled={submitting} className="w-full h-9">
           {submitting ? 'Adding...' : `Add to ${slideOver.mealType.charAt(0).toUpperCase() + slideOver.mealType.slice(1)}`}
-        </button>
+        </Button>
 
         <button
           type="button"
           onClick={() => { setPanelMode('search'); setSubmitClientError('') }}
-          className="text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+          className="text-xs font-medium text-primary hover:underline"
         >
           Back to search
         </button>
@@ -917,119 +886,66 @@ export default function Meals() {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setPanelMode('search')}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-            aria-label="Back to search"
-          >
-            <BackIcon />
-          </button>
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+          <Button type="button" size="icon-sm" variant="ghost" onClick={() => setPanelMode('search')} aria-label="Back to search">
+            <ArrowLeft />
+          </Button>
+          <h3 className="text-sm font-semibold">
             {f.id ? 'Edit Custom Food' : 'New Custom Food'}
           </h3>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-              Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={f.name}
-              onChange={e => updateCustomFoodField('name', e.target.value)}
-              required
-              style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            />
+          <div className="space-y-1.5">
+            <Label htmlFor="cf-name">Name <span className="text-destructive">*</span></Label>
+            <Input id="cf-name" type="text" value={f.name} onChange={e => updateCustomFoodField('name', e.target.value)} required className="h-9" />
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Brand (optional)</label>
-            <input
-              type="text"
-              value={f.brandName}
-              onChange={e => updateCustomFoodField('brandName', e.target.value)}
-              style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            />
+          <div className="space-y-1.5">
+            <Label htmlFor="cf-brand">Brand (optional)</Label>
+            <Input id="cf-brand" type="text" value={f.brandName} onChange={e => updateCustomFoodField('brandName', e.target.value)} className="h-9" />
           </div>
         </div>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Servings</p>
-            <button
-              type="button"
-              onClick={addCustomServing}
-              className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
-            >
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Servings</p>
+            <button type="button" onClick={addCustomServing} className="text-xs font-medium text-primary hover:underline">
               + Add another serving
             </button>
           </div>
 
           {f.servings.map((s, idx) => (
-            <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3 bg-white dark:bg-gray-800">
+            <div key={idx} className="border border-border rounded-lg p-3 space-y-3 bg-card">
               <div className="flex items-center justify-between gap-2">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+                <label className="flex items-center gap-1.5 text-xs font-medium">
                   <input
                     type="radio"
                     name="defaultServing"
                     checked={s.isDefault}
                     onChange={() => setCustomDefaultServing(idx)}
-                    className="accent-indigo-600"
+                    className="accent-primary size-4"
                   />
                   Default
                 </label>
                 {f.servings.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeCustomServing(idx)}
-                    aria-label="Remove serving"
-                    className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
-                  >
-                    <CloseIcon className="w-4 h-4" />
-                  </button>
+                  <Button type="button" size="icon-sm" variant="ghost" onClick={() => removeCustomServing(idx)} aria-label="Remove serving" className="text-muted-foreground hover:text-destructive">
+                    <X />
+                  </Button>
                 )}
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">
-                  Description <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={s.description}
-                  onChange={e => updateCustomServingField(idx, 'description', e.target.value)}
-                  placeholder="e.g. 1 scoop"
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                />
+              <div className="space-y-1.5">
+                <Label htmlFor={`cf-desc-${idx}`} className="text-[11px]">Description <span className="text-destructive">*</span></Label>
+                <Input id={`cf-desc-${idx}`} type="text" value={s.description} onChange={e => updateCustomServingField(idx, 'description', e.target.value)} placeholder="e.g. 1 scoop" className="h-9" />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Metric amount</label>
-                  <input
-                    type="number"
-                    value={s.metricAmount}
-                    onChange={e => updateCustomServingField(idx, 'metricAmount', e.target.value)}
-                    placeholder="e.g. 30"
-                    min="0"
-                    step="0.1"
-                    inputMode="decimal"
-                    style={{ fontSize: '16px' }}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  />
+                <div className="space-y-1.5">
+                  <Label htmlFor={`cf-amt-${idx}`} className="text-[11px]">Metric amount</Label>
+                  <Input id={`cf-amt-${idx}`} type="number" value={s.metricAmount} onChange={e => updateCustomServingField(idx, 'metricAmount', e.target.value)} placeholder="e.g. 30" min="0" step="0.1" inputMode="decimal" className="h-9" />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Unit</label>
-                  <select
-                    value={s.metricUnit}
-                    onChange={e => updateCustomServingField(idx, 'metricUnit', e.target.value)}
-                    style={{ fontSize: '16px' }}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  >
+                <div className="space-y-1.5">
+                  <Label htmlFor={`cf-unit-${idx}`} className="text-[11px]">Unit</Label>
+                  <select id={`cf-unit-${idx}`} value={s.metricUnit} onChange={e => updateCustomServingField(idx, 'metricUnit', e.target.value)} className={SELECT_CLASS}>
                     <option value="">—</option>
                     <option value="g">g</option>
                     <option value="ml">ml</option>
@@ -1045,21 +961,9 @@ export default function Meals() {
                   ['carbs',    'Carbs (g)'],
                   ['fat',      'Fat (g)'],
                 ].map(([key, label]) => (
-                  <div key={key}>
-                    <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">
-                      {label} <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={s[key]}
-                      onChange={e => updateCustomServingField(idx, key, e.target.value)}
-                      required
-                      min="0"
-                      step="0.1"
-                      inputMode="decimal"
-                      style={{ fontSize: '16px' }}
-                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    />
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={`cf-${key}-${idx}`} className="text-[11px]">{label} <span className="text-destructive">*</span></Label>
+                    <Input id={`cf-${key}-${idx}`} type="number" value={s[key]} onChange={e => updateCustomServingField(idx, key, e.target.value)} required min="0" step="0.1" inputMode="decimal" className="h-9" />
                   </div>
                 ))}
               </div>
@@ -1067,7 +971,7 @@ export default function Meals() {
               <button
                 type="button"
                 onClick={() => setCustomFoodAdvancedOpen(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
+                className="text-[11px] font-medium text-primary hover:underline"
               >
                 {customFoodAdvancedOpen[idx] ? 'Hide advanced nutrients' : 'Advanced nutrients (optional)'}
               </button>
@@ -1081,18 +985,9 @@ export default function Meals() {
                     ['saturatedFat',  'Sat. fat (g)'],
                     ['sodium',        'Sodium (mg)'],
                   ].map(([key, label]) => (
-                    <div key={key}>
-                      <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-                      <input
-                        type="number"
-                        value={s[key]}
-                        onChange={e => updateCustomServingField(idx, key, e.target.value)}
-                        min="0"
-                        step="0.1"
-                        inputMode="decimal"
-                        style={{ fontSize: '16px' }}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                      />
+                    <div key={key} className="space-y-1.5">
+                      <Label htmlFor={`cf-${key}-${idx}`} className="text-[11px]">{label}</Label>
+                      <Input id={`cf-${key}-${idx}`} type="number" value={s[key]} onChange={e => updateCustomServingField(idx, key, e.target.value)} min="0" step="0.1" inputMode="decimal" className="h-9" />
                     </div>
                   ))}
                 </div>
@@ -1101,16 +996,11 @@ export default function Meals() {
           ))}
         </div>
 
-        {customFoodError && <p className="text-xs text-red-600">{customFoodError}</p>}
+        {customFoodError && <p className="text-xs text-destructive">{customFoodError}</p>}
 
-        <button
-          type="button"
-          onClick={handleSaveCustomFood}
-          disabled={savingCustomFood}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
-        >
+        <Button type="button" onClick={handleSaveCustomFood} disabled={savingCustomFood} className="w-full h-9">
           {savingCustomFood ? 'Saving...' : f.id ? 'Save Changes' : 'Save Custom Food'}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -1119,70 +1009,54 @@ export default function Meals() {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Meal Presets</h3>
-          <button
-            type="button"
-            onClick={() => openPresetEditor(null)}
-            className="text-xs font-medium bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700 transition-colors"
-          >
-            + New Preset
-          </button>
+          <h3 className="text-sm font-semibold">Meal Presets</h3>
+          <Button type="button" size="sm" onClick={() => openPresetEditor(null)}>+ New Preset</Button>
         </div>
 
-        {presetError && <p className="text-xs text-red-600">{presetError}</p>}
+        {presetError && <p className="text-xs text-destructive">{presetError}</p>}
 
         {presets.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-sm text-gray-400">No presets yet.</p>
-            <p className="text-xs text-gray-400 mt-1">Create a preset to quickly log multiple foods at once.</p>
+            <p className="text-sm text-muted-foreground">No presets yet.</p>
+            <p className="text-xs text-muted-foreground mt-1">Create a preset to quickly log multiple foods at once.</p>
           </div>
         ) : (
           <ul className="space-y-2">
             {presets.map(preset => {
               const totalCal = preset.items.reduce((sum, it) => sum + ((it.serving?.calories ?? 0) * it.quantity), 0)
               return (
-                <li key={preset.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                <li key={preset.id} className="border border-border rounded-lg p-3">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{preset.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      <p className="text-sm font-semibold truncate">{preset.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {preset.items.length} item{preset.items.length !== 1 ? 's' : ''} · {fmt(totalCal)} kcal
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleLogPreset(preset.id)}
-                        disabled={loggingPresetId === preset.id}
-                        className="bg-indigo-600 text-white text-xs px-3 py-1 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                      >
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button type="button" size="sm" onClick={() => handleLogPreset(preset.id)} disabled={loggingPresetId === preset.id}>
                         {loggingPresetId === preset.id ? 'Adding...' : 'Use'}
-                      </button>
-                      <button
+                      </Button>
+                      <Button type="button" size="icon-sm" variant="ghost" onClick={() => openPresetEditor(preset)} aria-label={`Edit preset ${preset.name}`}>
+                        <Pencil />
+                      </Button>
+                      <Button
                         type="button"
-                        onClick={() => openPresetEditor(preset)}
-                        aria-label={`Edit preset ${preset.name}`}
-                        className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                      >
-                        <PencilIcon />
-                      </button>
-                      <button
-                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
                         onClick={() => handleDeletePreset(preset.id)}
                         disabled={deletingPresetId === preset.id}
                         aria-label={`Delete preset ${preset.name}`}
-                        className="w-7 h-7 flex items-center justify-center rounded-md text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors disabled:opacity-40"
+                        className="text-muted-foreground hover:text-destructive"
                       >
-                        {deletingPresetId === preset.id
-                          ? <Spinner className="w-3 h-3 border-2 border-red-400 border-t-transparent" />
-                          : <TrashIcon />}
-                      </button>
+                        {deletingPresetId === preset.id ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                      </Button>
                     </div>
                   </div>
                   {preset.items.length > 0 && (
                     <ul className="space-y-0.5">
                       {preset.items.map(item => (
-                        <li key={item.id} className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        <li key={item.id} className="text-xs text-muted-foreground truncate">
                           {item.quantity !== 1 ? `${item.quantity}× ` : ''}{item.foodName}
                           {item.servingDesc ? ` (${item.servingDesc})` : ''}
                         </li>
@@ -1205,61 +1079,36 @@ export default function Meals() {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => { setPanelMode('presets'); setPresetClientError('') }}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-            aria-label="Back to presets"
-          >
-            <BackIcon />
-          </button>
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-            {presetForm.id ? 'Edit Preset' : 'New Preset'}
-          </h3>
+          <Button type="button" size="icon-sm" variant="ghost" onClick={() => { setPanelMode('presets'); setPresetClientError('') }} aria-label="Back to presets">
+            <ArrowLeft />
+          </Button>
+          <h3 className="text-sm font-semibold">{presetForm.id ? 'Edit Preset' : 'New Preset'}</h3>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-            Preset Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={presetForm.name}
-            onChange={e => setPresetForm(prev => ({ ...prev, name: e.target.value }))}
-            placeholder="e.g. Morning Stack"
-            style={{ fontSize: '16px' }}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          />
+        <div className="space-y-1.5">
+          <Label htmlFor="preset-name">Preset Name <span className="text-destructive">*</span></Label>
+          <Input id="preset-name" type="text" value={presetForm.name} onChange={e => setPresetForm(prev => ({ ...prev, name: e.target.value }))} placeholder="e.g. Morning Stack" className="h-9" />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Add Item</label>
-          <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="preset-search">Add Item</Label>
+          <p className="text-[11px] text-muted-foreground">
             Pick from My Foods (or search FatSecret — items must first be saved to My Foods to add to a preset).
           </p>
-          <input
-            type="text"
-            value={presetSearchQuery}
-            onChange={handlePresetSearchInput}
-            placeholder="Search to add foods..."
-            style={{ fontSize: '16px' }}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          />
+          <Input id="preset-search" type="text" value={presetSearchQuery} onChange={handlePresetSearchInput} placeholder="Search to add foods..." className="h-9" />
         </div>
 
-        {presetSearchLoading && (
-          <p className="text-xs text-gray-400 animate-pulse">Searching...</p>
-        )}
+        {presetSearchLoading && <p className="text-xs text-muted-foreground animate-pulse">Searching...</p>}
 
         {!presetSearchLoading && !presetPickFood && presetSearchResults.length > 0 && (
-          <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
             {presetSearchResults.map(food => {
               const p = food.defaultPreview
               return (
-                <li key={food.foodId} className="flex items-center justify-between px-3 py-2.5 gap-2 bg-white dark:bg-gray-800">
+                <li key={food.foodId} className="flex items-center justify-between px-3 py-2.5 gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.foodName}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-sm font-medium truncate">{food.foodName}</p>
+                    <p className="text-xs text-muted-foreground">
                       {p ? `Per ${p.description} · ${fmt(p.calories)} kcal · ${fmt(p.protein, 'g')} protein` : 'FatSecret food'}
                     </p>
                     <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">Save to My Foods first to add to a preset.</p>
@@ -1272,19 +1121,15 @@ export default function Meals() {
 
         {!presetPickFood && !presetSearchQuery.trim() && customFoods.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">My Foods</p>
-            <ul className="divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">My Foods</p>
+            <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
               {customFoods.map(food => {
                 const d = food.servings[defaultServingIdx(food.servings)]
                 return (
-                  <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2 bg-white dark:bg-gray-800">
-                    <button
-                      type="button"
-                      onClick={() => pickFoodForPreset(customFoodToChosen(food))}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{food.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2">
+                    <button type="button" onClick={() => pickFoodForPreset(customFoodToChosen(food))} className="min-w-0 flex-1 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors">
+                      <p className="text-sm font-medium truncate">{food.name}</p>
+                      <p className="text-xs text-muted-foreground">
                         {d ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, 'g')} protein` : ''}
                       </p>
                     </button>
@@ -1296,157 +1141,110 @@ export default function Meals() {
         )}
 
         {presetPickFood && (
-          <div className="border border-indigo-200 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-lg p-3 space-y-3">
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">{presetPickFood.foodName}</p>
+          <div className="border border-primary/30 bg-primary/5 rounded-lg p-3 space-y-3">
+            <p className="text-sm font-semibold">{presetPickFood.foodName}</p>
             <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Serving</label>
-                <select
-                  value={presetPickServingIdx}
-                  onChange={e => setPresetPickServingIdx(Number(e.target.value))}
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                >
+              <div className="space-y-1.5">
+                <Label htmlFor="preset-pick-serving" className="text-[11px]">Serving</Label>
+                <select id="preset-pick-serving" value={presetPickServingIdx} onChange={e => setPresetPickServingIdx(Number(e.target.value))} className={SELECT_CLASS}>
                   {presetPickFood.servings.map((s, i) => (
-                    <option key={s.id ?? s.fatSecretServingId ?? i} value={i}>
-                      {s.description}
-                    </option>
+                    <option key={s.id ?? s.fatSecretServingId ?? i} value={i}>{s.description}</option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Quantity</label>
-                <input
-                  type="number"
-                  value={presetPickQuantity}
-                  onChange={e => setPresetPickQuantity(Math.max(0.25, parseFloat(e.target.value) || 0.25))}
-                  min="0.25"
-                  step="0.25"
-                  inputMode="decimal"
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                />
+              <div className="space-y-1.5">
+                <Label htmlFor="preset-pick-qty" className="text-[11px]">Quantity</Label>
+                <Input id="preset-pick-qty" type="number" value={presetPickQuantity} onChange={e => setPresetPickQuantity(Math.max(0.25, parseFloat(e.target.value) || 0.25))} min="0.25" step="0.25" inputMode="decimal" className="h-9" />
               </div>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-muted-foreground">
               {pickServing ? `${fmt((pickServing.calories ?? 0) * presetPickQuantity)} kcal total` : ''}
             </p>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={addPickedFoodToPreset}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-              >
-                Add to preset
-              </button>
-              <button
-                type="button"
-                onClick={() => setPresetPickFood(null)}
-                className="text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                Cancel
-              </button>
+              <Button type="button" size="sm" onClick={addPickedFoodToPreset}>Add to preset</Button>
+              <button type="button" onClick={() => setPresetPickFood(null)} className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
             </div>
           </div>
         )}
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Items in this preset</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Items in this preset</p>
             {presetForm.items.length > 0 && (
-              <p className="text-xs text-gray-500 dark:text-gray-400">{fmt(totalCal)} kcal total</p>
+              <p className="text-xs text-muted-foreground">{fmt(totalCal)} kcal total</p>
             )}
           </div>
           {presetForm.items.length === 0 ? (
-            <p className="text-xs text-gray-400 py-2">Search and add foods above.</p>
+            <p className="text-xs text-muted-foreground py-2">Search and add foods above.</p>
           ) : (
             <ul className="space-y-2">
               {presetForm.items.map((item, idx) => (
-                <li key={idx} className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-white dark:bg-gray-800">
+                <li key={idx} className="flex items-center gap-2 border border-border rounded-lg px-3 py-2">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.foodName}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-sm font-medium truncate">{item.foodName}</p>
+                    <p className="text-xs text-muted-foreground">
                       {item.servingDesc ? `${item.servingDesc} · ` : ''}{fmt(item.caloriesPerServing * item.quantity)} kcal
                     </p>
                   </div>
-                  <input
+                  <Input
                     type="number"
                     value={item.quantity}
                     onChange={e => updatePresetItemQuantity(idx, e.target.value)}
                     min="0.25"
                     step="0.25"
                     inputMode="decimal"
-                    style={{ fontSize: '16px' }}
-                    className="w-16 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-700 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-16 h-8 text-center"
                     aria-label={`Quantity for ${item.foodName}`}
                   />
-                  <span className="text-xs text-gray-400 dark:text-gray-500">×</span>
-                  <button
-                    type="button"
-                    onClick={() => removePresetItem(idx)}
-                    aria-label={`Remove ${item.foodName}`}
-                    className="w-6 h-6 flex items-center justify-center rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
-                  >
-                    <CloseIcon className="w-4 h-4" />
-                  </button>
+                  <span className="text-xs text-muted-foreground">×</span>
+                  <Button type="button" size="icon-sm" variant="ghost" onClick={() => removePresetItem(idx)} aria-label={`Remove ${item.foodName}`} className="text-muted-foreground hover:text-destructive">
+                    <X />
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
         </div>
 
-        {presetError && <p className="text-xs text-red-600">{presetError}</p>}
+        {presetError && <p className="text-xs text-destructive">{presetError}</p>}
 
-        <button
-          type="button"
-          onClick={handleSavePreset}
-          disabled={savingPreset || !presetForm.name.trim() || presetForm.items.length === 0}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
-        >
+        <Button type="button" onClick={handleSavePreset} disabled={savingPreset || !presetForm.name.trim() || presetForm.items.length === 0} className="w-full h-9">
           {savingPreset ? 'Saving...' : presetForm.id ? 'Save Changes' : 'Save Preset'}
-        </button>
+        </Button>
       </div>
     )
   }
+
+  const sheetTitle = panelMode === 'presets' || panelMode === 'new-preset'
+    ? slideOver.mealType.charAt(0).toUpperCase() + slideOver.mealType.slice(1)
+    : `Add to ${slideOver.mealType}`
 
   // ─── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Meal Logger</h1>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          style={{ fontSize: '16px' }}
-          className="border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-        />
+        <h1 className="text-2xl font-bold">Meal Logger</h1>
+        <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-auto" />
       </div>
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl p-4 text-sm">
-          {error}
-        </div>
+        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
+          <AlertDescription className="text-destructive">{error}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-          <h2 className="text-sm font-bold text-gray-900 dark:text-white">Nutrition Goals</h2>
+      {/* Nutrition Goals */}
+      <Card className="py-0 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-sm font-bold">Nutrition Goals</h2>
           {!goalsEditing ? (
-            <button type="button" onClick={() => setGoalsEditing(true)}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-300 rounded-lg px-3 py-1.5 transition-colors">
-              Edit Goals
-            </button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setGoalsEditing(true)}>Edit Goals</Button>
           ) : (
             <div className="flex gap-2">
-              <button type="button" onClick={handleSaveGoals} disabled={goalsSaving}
-                className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg px-3 py-1.5 transition-colors">
+              <Button type="button" size="sm" onClick={handleSaveGoals} disabled={goalsSaving}>
                 {goalsSaving ? 'Saving…' : 'Save'}
-              </button>
-              <button type="button" onClick={() => { setGoalsEditing(false); setGoalsClientError('') }}
-                className="text-xs font-semibold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 rounded-lg px-3 py-1.5 transition-colors">
-                Cancel
-              </button>
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => { setGoalsEditing(false); setGoalsClientError('') }}>Cancel</Button>
             </div>
           )}
         </div>
@@ -1461,19 +1259,15 @@ export default function Meals() {
                 { key: 'carbsGoal',  label: 'Carbs Goal',  unit: 'g' },
                 { key: 'fatGoal',    label: 'Fat Goal',    unit: 'g' },
               ].map(({ key, label, unit }) => (
-                <div key={key}>
-                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-                  <div className="flex items-center gap-1">
-                    <input type="number" min="0" value={goalsForm[key] ?? ''}
-                      onChange={e => setGoalsForm(f => ({ ...f, [key]: e.target.value }))}
-                      inputMode="numeric"
-                      style={{ fontSize: '16px' }}
-                      className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{unit}</span>
+                <div key={key} className="space-y-1.5">
+                  <Label htmlFor={`goal-${key}`}>{label}</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input id={`goal-${key}`} type="number" min="0" value={goalsForm[key] ?? ''} onChange={e => setGoalsForm(f => ({ ...f, [key]: e.target.value }))} inputMode="numeric" className="h-9" />
+                    <span className="text-xs text-muted-foreground shrink-0">{unit}</span>
                   </div>
                 </div>
               ))}
-              {goalsError && <p className="col-span-full text-xs text-red-600">{goalsError}</p>}
+              {goalsError && <p className="col-span-full text-xs text-destructive">{goalsError}</p>}
             </div>
           ) : goals ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
@@ -1485,21 +1279,21 @@ export default function Meals() {
                 { label: 'Carbs',    value: goals.carbsGoal,  unit: 'g' },
                 { label: 'Fat',      value: goals.fatGoal,    unit: 'g' },
               ].map(({ label, value, unit }) => (
-                <div key={label} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-2">
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">{label}</p>
-                  <p className="text-sm font-bold text-gray-900 dark:text-white">{value ?? '—'}<span className="text-xs font-normal text-gray-400 dark:text-gray-500 ml-0.5">{unit}</span></p>
+                <div key={label} className="bg-muted rounded-lg p-2">
+                  <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+                  <p className="text-sm font-bold">{value ?? '—'}<span className="text-xs font-normal text-muted-foreground ml-0.5">{unit}</span></p>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400">Loading goals…</p>
+            <p className="text-sm text-muted-foreground">Loading goals…</p>
           )}
         </div>
-      </div>
+      </Card>
 
       {loading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="text-gray-400 text-sm animate-pulse">Loading meals...</div>
+        <div className="space-y-4">
+          {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-28 rounded-xl" />)}
         </div>
       ) : (
         <>
@@ -1508,171 +1302,129 @@ export default function Meals() {
             const subtotal = items.reduce((sum, item) => sum + (item.calories || 0), 0)
 
             return (
-              <div key={mealType} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-                  <h2 className="text-sm font-semibold text-gray-900 dark:text-white capitalize">{mealType}</h2>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{fmt(subtotal)} kcal</span>
+              <Card key={mealType} className="py-0 overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                  <h2 className="text-sm font-semibold capitalize">{mealType}</h2>
+                  <span className="text-sm text-muted-foreground">{fmt(subtotal)} kcal</span>
                 </div>
 
                 {items.length > 0 ? (
-                  <ul className="divide-y divide-gray-50 dark:divide-gray-700">
+                  <ul className="divide-y divide-border">
                     {items.map(item => (
                       <li key={item.id} className="flex items-center justify-between px-5 py-3 gap-3">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                          <p className="text-sm font-semibold truncate">
                             {item.foodName}
-                            {item.brandName ? <span className="text-gray-400 dark:text-gray-500 font-normal"> · {item.brandName}</span> : null}
+                            {item.brandName ? <span className="text-muted-foreground font-normal"> · {item.brandName}</span> : null}
                           </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             {item.quantity && item.quantity !== 1 ? `${item.quantity}× ` : ''}
                             {item.servingDesc ? `${item.servingDesc} · ` : ''}
                             {fmt(item.calories)} kcal · {fmt(item.protein, 'g')} protein · {fmt(item.carbs, 'g')} carbs · {fmt(item.fat, 'g')} fat
                           </p>
                         </div>
-                        <button
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
                           onClick={() => handleDelete(item.id)}
                           disabled={deletingId === item.id}
                           aria-label={`Delete ${item.foodName}`}
-                          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors disabled:opacity-40"
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
                         >
-                          {deletingId === item.id
-                            ? <Spinner className="w-3 h-3 border-2 border-red-400 border-t-transparent" />
-                            : <TrashIcon />}
-                        </button>
+                          {deletingId === item.id ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                        </Button>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="px-5 py-3 text-sm text-gray-400 dark:text-gray-500">Nothing logged yet.</p>
+                  <p className="px-5 py-3 text-sm text-muted-foreground">Nothing logged yet.</p>
                 )}
 
-                <div className="px-5 py-3 border-t border-gray-50 dark:border-gray-700 flex items-center gap-4">
-                  <button
-                    onClick={() => openSlideOver(mealType)}
-                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
-                  >
+                <div className="px-5 py-3 border-t border-border flex items-center gap-4">
+                  <button onClick={() => openSlideOver(mealType)} className="text-sm font-medium text-primary hover:underline">
                     + Add Food
                   </button>
-                  <button
-                    onClick={() => openSlideOver(mealType, 'presets')}
-                    className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                  >
+                  <button onClick={() => openSlideOver(mealType, 'presets')} className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                     Presets
                   </button>
                   {items.length > 0 && saveAsMeal?.mealType !== mealType && (
-                    <button
-                      onClick={() => setSaveAsMeal({ mealType, name: '', error: '' })}
-                      className="text-sm font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors ml-auto"
-                    >
+                    <button onClick={() => setSaveAsMeal({ mealType, name: '', error: '' })} className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors ml-auto">
                       Save as Preset
                     </button>
                   )}
                 </div>
 
                 {saveAsMeal?.mealType === mealType && (
-                  <div className="px-5 py-3 border-t border-indigo-50 dark:border-indigo-900/30 bg-indigo-50/40 dark:bg-indigo-900/10 space-y-2">
-                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-400">Save "{mealType}" as a preset:</p>
+                  <div className="px-5 py-3 border-t border-border bg-primary/5 space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground">Save "{mealType}" as a preset:</p>
                     <div className="flex gap-2">
-                      <input
+                      <Input
                         type="text"
                         value={saveAsMeal.name}
                         onChange={e => setSaveAsMeal(prev => ({ ...prev, name: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') handleSaveMealAsPreset(items); if (e.key === 'Escape') setSaveAsMeal(null) }}
                         placeholder="Preset name…"
-                        style={{ fontSize: '16px' }}
-                        className="flex-1 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="flex-1 h-8"
                       />
-                      <button
-                        onClick={() => handleSaveMealAsPreset(items)}
-                        disabled={saveAsPresetMutation.isPending || !saveAsMeal.name.trim()}
-                        className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-                      >
-                        {saveAsPresetMutation.isPending ? <Spinner /> : 'Save'}
-                      </button>
-                      <button
-                        onClick={() => setSaveAsMeal(null)}
-                        className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xs px-2 transition-colors"
-                      >
-                        Cancel
-                      </button>
+                      <Button size="sm" onClick={() => handleSaveMealAsPreset(items)} disabled={saveAsPresetMutation.isPending || !saveAsMeal.name.trim()}>
+                        {saveAsPresetMutation.isPending ? <Loader2 className="animate-spin" /> : 'Save'}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setSaveAsMeal(null)}>Cancel</Button>
                     </div>
-                    {saveAsMeal.error && <p className="text-xs text-red-600">{saveAsMeal.error}</p>}
+                    {saveAsMeal.error && <p className="text-xs text-destructive">{saveAsMeal.error}</p>}
                   </div>
                 )}
-              </div>
+              </Card>
             )
           })}
 
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm px-5 py-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Daily Totals</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(totals.calories || 0)}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Calories</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{fmt(totals.protein || 0, 'g')}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Protein</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(totals.carbs || 0, 'g')}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Carbs</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{fmt(totals.fat || 0, 'g')}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Fat</p>
+          <Card className="py-0 overflow-hidden">
+            <div className="px-5 py-4">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Daily Totals</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-2xl font-bold">{fmt(totals.calories || 0)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Calories</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-primary">{fmt(totals.protein || 0, 'g')}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Protein</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{fmt(totals.carbs || 0, 'g')}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Carbs</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{fmt(totals.fat || 0, 'g')}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Fat</p>
+                </div>
               </div>
             </div>
-          </div>
+          </Card>
         </>
       )}
 
-      {slideOver.open && (
-        <div className="fixed inset-0 bg-black/40 z-40" onClick={closeSlideOver} aria-hidden="true" />
-      )}
-
-      <div
-        className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white dark:bg-gray-900 shadow-xl z-50 flex flex-col transition-transform duration-300 ${
-          slideOver.open ? 'translate-x-0' : 'translate-x-full'
-        }`}
-        aria-modal="true"
-        role="dialog"
-        aria-label="Add food panel"
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white capitalize">
-            {panelMode === 'presets' || panelMode === 'new-preset'
-              ? slideOver.mealType.charAt(0).toUpperCase() + slideOver.mealType.slice(1)
-              : `Add to ${slideOver.mealType}`}
-          </h2>
-          <div className="flex items-center gap-1">
+      {/* Add-food slide-over */}
+      <Sheet open={slideOver.open} onOpenChange={(open) => { if (!open) closeSlideOver() }}>
+        <SheetContent className="w-full sm:max-w-[420px] p-0 gap-0">
+          <SheetHeader className="flex-row items-center justify-between border-b pr-12">
+            <SheetTitle className="capitalize">{sheetTitle}</SheetTitle>
             {panelMode === 'search' && (
-              <button
-                type="button"
-                onClick={() => { setPanelMode('presets'); setPresetClientError('') }}
-                className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mr-1"
-              >
+              <Button type="button" variant="ghost" size="sm" onClick={() => { setPanelMode('presets'); setPresetClientError('') }}>
                 Presets
-              </button>
+              </Button>
             )}
-            <button
-              onClick={closeSlideOver}
-              aria-label="Close panel"
-              className="w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        </div>
+          </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-          {panelMode === 'search'      && renderSearchPanel()}
-          {panelMode === 'log'         && renderLogPanel()}
-          {panelMode === 'custom-food' && renderCustomFoodPanel()}
-          {panelMode === 'presets'     && renderPresetsPanel()}
-          {panelMode === 'new-preset'  && renderNewPresetPanel()}
-        </div>
-      </div>
+          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+            {panelMode === 'search'      && renderSearchPanel()}
+            {panelMode === 'log'         && renderLogPanel()}
+            {panelMode === 'custom-food' && renderCustomFoodPanel()}
+            {panelMode === 'presets'     && renderPresetsPanel()}
+            {panelMode === 'new-preset'  && renderNewPresetPanel()}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
