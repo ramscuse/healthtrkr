@@ -10,6 +10,8 @@ import Account from './pages/Account.jsx'
 import Admin from './pages/Admin.jsx'
 import Layout from './components/Layout.jsx'
 import ProtectedRoute, { AdminRoute } from './components/ProtectedRoute.jsx'
+import { TooltipProvider } from './components/ui/tooltip.jsx'
+import { Toaster } from './components/ui/sonner.jsx'
 import { SpeedInsights } from "@vercel/speed-insights/react"
 import { Analytics } from "@vercel/analytics/react"
 
@@ -19,6 +21,7 @@ export default function App() {
     <SpeedInsights />
     <Analytics />
     <ThemeProvider>
+    <TooltipProvider>
     <Routes>
       <Route path="/login" element={<Auth />} />
 
@@ -101,6 +104,8 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
+    <Toaster />
+    </TooltipProvider>
     </ThemeProvider>
     </>
   )

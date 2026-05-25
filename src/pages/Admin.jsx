@@ -63,7 +63,7 @@ export default function Admin() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xs divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
         {loading ? (
           <div className="px-5 py-6 text-sm text-gray-400 dark:text-gray-500">Loading users…</div>
         ) : users.length === 0 ? (
@@ -82,12 +82,12 @@ export default function Admin() {
                     {u.name || '(no name)'}
                   </span>
                   {u.role === 'admin' && (
-                    <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
                       Admin
                     </span>
                   )}
                   {me?.id === u.id && (
-                    <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
                       You
                     </span>
                   )}
@@ -252,7 +252,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onChanged, onDeleted }) {
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
             style={{ fontSize: '16px' }}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
           />
         </div>
 
@@ -263,7 +263,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onChanged, onDeleted }) {
             onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
             disabled={isLastAdmin}
             style={{ fontSize: '16px' }}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
           >
             <option value="user">user</option>
             <option value="admin">admin</option>
@@ -283,14 +283,14 @@ function EditorPanel({ target, isSelf, isLastAdmin, onChanged, onDeleted }) {
           <button
             type="button"
             onClick={() => setForm(f => ({ ...f, darkMode: !f.darkMode }))}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
               form.darkMode ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-600'
             }`}
             role="switch"
             aria-checked={form.darkMode}
           >
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
                 form.darkMode ? 'translate-x-6' : 'translate-x-1'
               }`}
             />
@@ -340,7 +340,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onChanged, onDeleted }) {
               onChange={e => setNewPassword(e.target.value)}
               autoComplete="new-password"
               style={{ fontSize: '16px' }}
-              className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
             />
           </div>
           <button
