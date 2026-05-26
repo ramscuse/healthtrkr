@@ -1,9 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { CheckIcon, XIcon } from 'lucide-react'
 import { useProgressSummary } from '../hooks/useProgress.js'
 import { useWaterToday, useLogWater } from '../hooks/useWater.js'
 import { useGoals } from '../hooks/useGoals.js'
 import { useUpdateActiveCalories } from '../hooks/useHealth.js'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { cn } from '@/lib/utils'
 
 function getTodayString() {
   const now = new Date()
@@ -20,9 +27,24 @@ function formatDate(dateStr) {
 }
 
 function getCalorieColor(consumed, min, max) {
-  if (consumed > max) return 'text-red-600'
+  if (consumed > max) return 'text-red-500'
   if (consumed < min) return 'text-yellow-500'
-  return 'text-green-600'
+  return 'text-green-500'
+}
+
+// section title — small uppercase label used across the dashboard
+function SectionLabel({ children }) {
+  return <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</p>
+}
+
+function MetricBar({ value, max, fillClass }) {
+  if (!(max > 0)) return null
+  return (
+    <div className="mt-2 w-full bg-muted rounded-full h-1.5">
+      <div className={cn('h-1.5 rounded-full transition-all', fillClass)}
+        style={{ width: `${Math.min(100, (value / max) * 100)}%` }} />
+    </div>
+  )
 }
 
 export default function Dashboard() {
@@ -47,17 +69,26 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-400 dark:text-gray-500 text-sm animate-pulse">Loading dashboard...</div>
+      <div className="space-y-6">
+        <div className="flex items-baseline justify-between">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[0, 1, 2].map(i => <Skeleton key={i} className="h-28 rounded-xl" />)}
+        </div>
+        <Skeleton className="h-32 rounded-xl" />
+        <Skeleton className="h-24 rounded-xl" />
+        <Skeleton className="h-48 rounded-xl" />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl p-6 text-sm">
-        {error}
-      </div>
+      <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
+        <AlertDescription className="text-destructive">{error}</AlertDescription>
+      </Alert>
     )
   }
 
@@ -98,186 +129,189 @@ export default function Dashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-        <span className="text-sm text-gray-500 dark:text-gray-400">{formatDate(today)}</span>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <span className="text-sm text-muted-foreground">{formatDate(today)}</span>
       </div>
 
       {/* 3 Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Calories */}
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Calories</p>
-          <p className={`text-3xl font-bold ${calorieColor}`}>{Math.round(consumed.calories || 0)}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Goal: {goals.calorieMin ?? '—'}–{goals.calorieMax ?? '—'} kcal
-          </p>
-          {goals.calorieMax > 0 && (
-            <div className="mt-2">
-              <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
-                <div className={`h-1.5 rounded-full transition-all ${consumed.calories > goals.calorieMax ? 'bg-red-500' : consumed.calories >= goals.calorieMin ? 'bg-green-500' : 'bg-yellow-400'}`}
-                  style={{ width: `${Math.min(100, ((consumed.calories || 0) / goals.calorieMax) * 100)}%` }} />
-              </div>
-            </div>
-          )}
-        </div>
+        <Card>
+          <CardContent>
+            <SectionLabel>Calories</SectionLabel>
+            <p className={cn('text-3xl font-bold mt-1', calorieColor)}>{Math.round(consumed.calories || 0)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Goal: {goals.calorieMin ?? '—'}–{goals.calorieMax ?? '—'} kcal
+            </p>
+            <MetricBar
+              value={consumed.calories || 0}
+              max={goals.calorieMax}
+              fillClass={consumed.calories > goals.calorieMax ? 'bg-red-500' : consumed.calories >= goals.calorieMin ? 'bg-green-500' : 'bg-yellow-400'}
+            />
+          </CardContent>
+        </Card>
 
         {/* Protein */}
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Protein</p>
-          <p className={`text-3xl font-bold ${proteinColor}`}>{Math.round(consumed.protein || 0)}<span className="text-base font-normal text-gray-400 dark:text-gray-500 ml-1">g</span></p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Goal: {goals.proteinMin ?? '—'}–{goals.proteinMax ?? '—'} g
-          </p>
-          {goals.proteinMax > 0 && (
-            <div className="mt-2">
-              <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
-                <div className={`h-1.5 rounded-full transition-all ${consumed.protein > goals.proteinMax ? 'bg-red-500' : consumed.protein >= goals.proteinMin ? 'bg-green-500' : 'bg-yellow-400'}`}
-                  style={{ width: `${Math.min(100, ((consumed.protein || 0) / goals.proteinMax) * 100)}%` }} />
-              </div>
-            </div>
-          )}
-        </div>
+        <Card>
+          <CardContent>
+            <SectionLabel>Protein</SectionLabel>
+            <p className={cn('text-3xl font-bold mt-1', proteinColor)}>
+              {Math.round(consumed.protein || 0)}<span className="text-base font-normal text-muted-foreground ml-1">g</span>
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Goal: {goals.proteinMin ?? '—'}–{goals.proteinMax ?? '—'} g
+            </p>
+            <MetricBar
+              value={consumed.protein || 0}
+              max={goals.proteinMax}
+              fillClass={consumed.protein > goals.proteinMax ? 'bg-red-500' : consumed.protein >= goals.proteinMin ? 'bg-green-500' : 'bg-yellow-400'}
+            />
+          </CardContent>
+        </Card>
 
         {/* Active Burned */}
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm p-5">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Active Burned</p>
-            {!activeCalEditing && (
-              <button
-                type="button"
-                onClick={() => { setActiveCalInput(burned.active > 0 ? String(Math.round(burned.active)) : ''); setActiveCalEditing(true); setActiveCalClientError('') }}
-                className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
-              >
-                {burned.active > 0 ? 'Edit' : 'Log'}
-              </button>
-            )}
-          </div>
-          {activeCalEditing ? (
-            <div className="space-y-2 mt-1">
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  value={activeCalInput}
-                  onChange={e => { setActiveCalInput(e.target.value); setActiveCalClientError('') }}
-                  onKeyDown={e => e.key === 'Enter' && handleSaveActiveCal()}
-                  placeholder="kcal"
-                  inputMode="numeric"
-                  style={{ fontSize: '16px' }}
-                  className="w-24 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-                <span className="text-xs text-gray-500 dark:text-gray-400">kcal</span>
-                <button type="button" onClick={handleSaveActiveCal} disabled={activeCalSaving}
-                  className="text-xs font-semibold text-white bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 rounded-lg px-2 py-1 transition-colors">
-                  {activeCalSaving ? '…' : 'Save'}
+        <Card>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <SectionLabel>Active Burned</SectionLabel>
+              {!activeCalEditing && (
+                <button
+                  type="button"
+                  onClick={() => { setActiveCalInput(burned.active > 0 ? String(Math.round(burned.active)) : ''); setActiveCalEditing(true); setActiveCalClientError('') }}
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  {burned.active > 0 ? 'Edit' : 'Log'}
                 </button>
-                <button type="button" onClick={() => { setActiveCalEditing(false); setActiveCalClientError('') }}
-                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors">✕</button>
-              </div>
-              {activeCalError && <p className="text-xs text-red-500">{activeCalError}</p>}
+              )}
             </div>
-          ) : (
-            <>
-              <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{activeCaloriesDisplay}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {burned.active > 0 ? 'kcal active burned today' : 'Tap Log to add manually'}
-              </p>
-            </>
-          )}
-        </div>
+            {activeCalEditing ? (
+              <div className="space-y-2 mt-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={activeCalInput}
+                    onChange={e => { setActiveCalInput(e.target.value); setActiveCalClientError('') }}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveActiveCal()}
+                    placeholder="kcal"
+                    className="w-24"
+                  />
+                  <Button type="button" size="sm" onClick={handleSaveActiveCal} disabled={activeCalSaving}>
+                    {activeCalSaving ? '…' : 'Save'}
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" onClick={() => { setActiveCalEditing(false); setActiveCalClientError('') }} aria-label="Cancel">
+                    <XIcon />
+                  </Button>
+                </div>
+                {activeCalError && <p className="text-xs text-destructive">{activeCalError}</p>}
+              </div>
+            ) : (
+              <>
+                <p className="text-3xl font-bold text-primary mt-1">{activeCaloriesDisplay}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {burned.active > 0 ? 'kcal active burned today' : 'Tap Log to add manually'}
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Calorie Balance Card */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-4">Calorie Balance</h2>
-        <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center">
-          <div>
-            <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{Math.round(net)}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Net calories</p>
+      <Card>
+        <CardContent className="space-y-4">
+          <SectionLabel>Calorie Balance</SectionLabel>
+          <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center">
+            <div>
+              <p className="text-2xl sm:text-3xl font-bold">{Math.round(net)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Net calories</p>
+            </div>
+            <div>
+              <p className="text-2xl sm:text-3xl font-bold text-primary">{Math.abs(Math.round(deficit))}</p>
+              <p className="text-xs text-muted-foreground mt-1">{deficit >= 0 ? 'Deficit' : 'Surplus'}</p>
+            </div>
+            <div>
+              <p className="text-2xl sm:text-3xl font-bold">{Math.round(burned.total || 0)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Total burned</p>
+            </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-bold text-indigo-600 dark:text-indigo-400">{Math.abs(Math.round(deficit))}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{deficit >= 0 ? 'Deficit' : 'Surplus'}</p>
-          </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{Math.round(burned.total || 0)}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total burned</p>
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Workout Card */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm flex items-center gap-4">
-        <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${
-          workoutLogged ? 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
-        }`}>
-          {workoutLogged ? '✓' : '✗'}
-        </div>
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-            {workoutLogged ? 'Workout logged today' : 'No workout logged yet'}
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            {workoutLogged ? 'Great work keeping up with your training.' : 'Head to Workouts to log a session.'}
-          </p>
-        </div>
-        {!workoutLogged && (
-          <button
-            onClick={() => navigate('/workouts')}
-            className="ml-auto text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
-          >
-            Log workout
-          </button>
-        )}
-      </div>
+      <Card>
+        <CardContent className="flex items-center gap-4">
+          <div className={cn(
+            'shrink-0 size-12 rounded-full flex items-center justify-center',
+            workoutLogged ? 'bg-green-500/15 text-green-500' : 'bg-muted text-muted-foreground'
+          )}>
+            {workoutLogged ? <CheckIcon className="size-6" /> : <XIcon className="size-6" />}
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold">
+              {workoutLogged ? 'Workout logged today' : 'No workout logged yet'}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {workoutLogged ? 'Great work keeping up with your training.' : 'Head to Workouts to log a session.'}
+            </p>
+          </div>
+          {!workoutLogged && (
+            <Button variant="link" size="sm" onClick={() => navigate('/workouts')} className="ml-auto">
+              Log workout
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Water Card */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Water Intake</h2>
-          <button onClick={() => navigate('/water')}
-            className="text-xs font-semibold text-sky-600 dark:text-sky-400 hover:text-sky-700 transition-colors">
-            View all →
-          </button>
-        </div>
-        <div className="flex items-end gap-3 mb-3">
-          <span className="text-4xl font-bold text-sky-600 dark:text-sky-400">{Math.round(water.total || 0)}</span>
-          <span className="text-base text-sky-500 dark:text-sky-400 font-medium pb-1">oz &nbsp;·&nbsp; {((water.total || 0) / 8).toFixed(1)} cups</span>
+      <Card>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <SectionLabel>Water Intake</SectionLabel>
+            <button onClick={() => navigate('/water')}
+              className="text-xs font-semibold text-sky-500 hover:underline">
+              View all →
+            </button>
+          </div>
+          <div className="flex items-end gap-3">
+            <span className="text-4xl font-bold text-sky-500">{Math.round(water.total || 0)}</span>
+            <span className="text-base text-sky-500/80 font-medium pb-1">oz &nbsp;·&nbsp; {((water.total || 0) / 8).toFixed(1)} cups</span>
+            {goals.waterGoal > 0 && (
+              <span className="text-xs text-muted-foreground pb-1 ml-auto">Goal: {goals.waterGoal} oz</span>
+            )}
+          </div>
           {goals.waterGoal > 0 && (
-            <span className="text-xs text-sky-400 pb-1 ml-auto">Goal: {goals.waterGoal} oz</span>
-          )}
-        </div>
-        {goals.waterGoal > 0 && (
-          <div className="mb-3">
-            <div className="w-full bg-sky-50 dark:bg-sky-900/20 rounded-full h-1.5">
+            <div className="w-full bg-muted rounded-full h-1.5">
               <div className="bg-sky-500 h-1.5 rounded-full transition-all"
                 style={{ width: `${Math.min(100, ((water.total || 0) / goals.waterGoal) * 100)}%` }} />
             </div>
+          )}
+          <div className="grid grid-cols-4 gap-2">
+            {[8, 12, 16, 32].map(oz => (
+              <button key={oz} type="button" onClick={() => handleQuickWater(oz)} disabled={waterAdding}
+                className="flex flex-col items-center justify-center bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 rounded-xl py-3 transition-colors disabled:opacity-50">
+                <span className="text-base font-bold text-sky-500">{oz}</span>
+                <span className="text-xs text-sky-500/80 font-medium">oz</span>
+              </button>
+            ))}
           </div>
-        )}
-        <div className="grid grid-cols-4 gap-2">
-          {[8, 12, 16, 32].map(oz => (
-            <button key={oz} type="button" onClick={() => handleQuickWater(oz)} disabled={waterAdding}
-              className="flex flex-col items-center justify-center bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/30 border border-sky-100 dark:border-sky-800 hover:border-sky-200 rounded-xl py-3 transition-all disabled:opacity-50">
-              <span className="text-base font-bold text-sky-600 dark:text-sky-400">{oz}</span>
-              <span className="text-xs text-sky-500 dark:text-sky-400 font-medium">oz</span>
-            </button>
-          ))}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Quick-add Row */}
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Quick Add</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <SectionLabel>Quick Add</SectionLabel>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
           {mealTypes.map(meal => (
-            <button
+            <Button
               key={meal}
+              variant="outline"
               onClick={() => navigate('/meals', { state: { openFor: meal } })}
-              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-sm rounded-xl py-4 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 capitalize transition-all"
+              className="h-auto py-4 capitalize hover:border-primary hover:text-primary"
             >
               + {meal.charAt(0).toUpperCase() + meal.slice(1)}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

@@ -1,7 +1,37 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { login, register, forgotPassword, resetPassword } from '../lib/api.js'
 import { useUser } from '../context/UserContext.jsx'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+
+function AuthShell({ children }) {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-primary">healthtrkr</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Your personal fitness companion</p>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function ErrorAlert({ children }) {
+  return (
+    <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
+      <AlertDescription className="text-destructive">{children}</AlertDescription>
+    </Alert>
+  )
+}
 
 // view: 'login' | 'register' | 'forgot' | 'reset'
 export default function Auth() {
@@ -16,12 +46,10 @@ export default function Auth() {
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   function switchTab(tab) {
     setView(tab)
     setError('')
-    setSuccess('')
     setName('')
     setEmail('')
     setPassword('')
@@ -54,7 +82,7 @@ export default function Auth() {
     setLoading(true)
     try {
       await forgotPassword(email)
-      setSuccess('Check your email — a 6-digit code is on its way.')
+      toast.success('Check your email — a 6-digit code is on its way.')
       setView('reset')
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
@@ -69,7 +97,7 @@ export default function Auth() {
     setLoading(true)
     try {
       await resetPassword(email, code.trim(), newPassword)
-      setSuccess('Password reset! You can now log in.')
+      toast.success('Password reset! You can now log in.')
       switchTab('login')
     } catch (err) {
       setError(err.message || 'Invalid or expired code.')
@@ -81,200 +109,139 @@ export default function Auth() {
   // ── Forgot Password view ─────────────────────────────────────────────────
   if (view === 'forgot') {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-indigo-600">healthtrkr</h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Your personal fitness companion</p>
-          </div>
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 pt-6 pb-2">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Reset your password</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Enter your email and we'll send you a 6-digit code.</p>
-            </div>
-            <form onSubmit={handleForgot} className="px-6 py-5 space-y-4">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-4 py-3">
-                  {error}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Email</label>
-                <input
+      <AuthShell>
+        <Card>
+          <CardHeader>
+            <CardTitle>Reset your password</CardTitle>
+            <CardDescription>Enter your email and we'll send you a 6-digit code.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleForgot} className="space-y-4">
+              {error && <ErrorAlert>{error}</ErrorAlert>}
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="h-10"
                 />
               </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
-              >
+              <Button type="submit" disabled={loading} className="w-full h-10">
                 {loading ? 'Sending…' : 'Send Code'}
-              </button>
-              <button
-                type="button"
-                onClick={() => switchTab('login')}
-                className="w-full text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-              >
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => switchTab('login')} className="w-full">
                 Back to Log In
-              </button>
+              </Button>
             </form>
-          </div>
-        </div>
-      </div>
+          </CardContent>
+        </Card>
+      </AuthShell>
     )
   }
 
   // ── Reset Password view ──────────────────────────────────────────────────
   if (view === 'reset') {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-indigo-600">healthtrkr</h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Your personal fitness companion</p>
-          </div>
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 pt-6 pb-2">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Enter your reset code</h2>
-              {success && (
-                <p className="text-sm text-green-600 dark:text-green-400 mt-1">{success}</p>
-              )}
-              {!success && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Check your email for a 6-digit code.</p>
-              )}
-            </div>
-            <form onSubmit={handleReset} className="px-6 py-5 space-y-4">
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-4 py-3">
-                  {error}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Email</label>
-                <input
+      <AuthShell>
+        <Card>
+          <CardHeader>
+            <CardTitle>Enter your reset code</CardTitle>
+            <CardDescription>
+              Check your email for a 6-digit code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleReset} className="space-y-4">
+              {error && <ErrorAlert>{error}</ErrorAlert>}
+              <div className="space-y-1.5">
+                <Label htmlFor="reset-email">Email</Label>
+                <Input
+                  id="reset-email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="h-10"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">6-digit code</label>
-                <input
+              <div className="space-y-1.5">
+                <Label htmlFor="code">6-digit code</Label>
+                <Input
+                  id="code"
                   type="text"
+                  inputMode="numeric"
                   value={code}
                   onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   required
                   placeholder="123456"
-                  inputMode="numeric"
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent tracking-widest text-center font-mono"
+                  className="h-10 text-center font-mono tracking-widest"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">New password</label>
-                <input
+              <div className="space-y-1.5">
+                <Label htmlFor="new-password">New password</Label>
+                <Input
+                  id="new-password"
                   type="password"
+                  autoComplete="new-password"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   required
                   placeholder="Min 6 characters"
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="h-10"
                 />
               </div>
-              <button
-                type="submit"
-                disabled={loading || code.length !== 6}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
-              >
+              <Button type="submit" disabled={loading || code.length !== 6} className="w-full h-10">
                 {loading ? 'Resetting…' : 'Reset Password'}
-              </button>
+              </Button>
               <div className="flex justify-between text-sm">
                 <button
                   type="button"
                   onClick={() => { setError(''); setView('forgot') }}
-                  className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Resend code
                 </button>
                 <button
                   type="button"
                   onClick={() => switchTab('login')}
-                  className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Back to Log In
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      </div>
+          </CardContent>
+        </Card>
+      </AuthShell>
     )
   }
 
   // ── Login / Register view ────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-indigo-600">healthtrkr</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Your personal fitness companion</p>
-        </div>
+    <AuthShell>
+      <Card>
+        <CardContent>
+          <Tabs value={view} onValueChange={switchTab}>
+            <TabsList className="w-full">
+              <TabsTrigger value="login" className="flex-1">Log In</TabsTrigger>
+              <TabsTrigger value="register" className="flex-1">Register</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          {/* Tabs */}
-          <div className="flex border-b border-gray-200 dark:border-gray-700">
-            <button
-              onClick={() => switchTab('login')}
-              className={`flex-1 py-3 text-sm font-semibold transition-colors ${
-                view === 'login'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white dark:bg-gray-900'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-gray-50 dark:bg-gray-800'
-              }`}
-            >
-              Log In
-            </button>
-            <button
-              onClick={() => switchTab('register')}
-              className={`flex-1 py-3 text-sm font-semibold transition-colors ${
-                view === 'register'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white dark:bg-gray-900'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-gray-50 dark:bg-gray-800'
-              }`}
-            >
-              Register
-            </button>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="px-6 py-6 space-y-4">
-            {success && (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 text-sm rounded-lg px-4 py-3">
-                {success}
-              </div>
-            )}
-            {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm rounded-lg px-4 py-3">
-                {error}
-              </div>
-            )}
+          <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+            {error && <ErrorAlert>{error}</ErrorAlert>}
 
             {view === 'register' && (
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Name</label>
-                <input
+              <div className="space-y-1.5">
+                <Label htmlFor="name">Name</Label>
+                <Input
                   id="name"
                   name="name"
                   type="text"
@@ -283,15 +250,14 @@ export default function Auth() {
                   onChange={e => setName(e.target.value)}
                   required
                   placeholder="Your name"
-                  style={{ fontSize: '16px' }}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="h-10"
                 />
               </div>
             )}
 
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Email</label>
-              <input
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input
                 id="email"
                 name="email"
                 type="email"
@@ -300,25 +266,24 @@ export default function Auth() {
                 onChange={e => setEmail(e.target.value)}
                 required
                 placeholder="you@example.com"
-                style={{ fontSize: '16px' }}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="h-10"
               />
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-200">Password</label>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
                 {view === 'login' && (
                   <button
                     type="button"
-                    onClick={() => { setError(''); setSuccess(''); setView('forgot') }}
-                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+                    onClick={() => { setError(''); setView('forgot') }}
+                    className="text-xs text-primary hover:underline"
                   >
                     Forgot password?
                   </button>
                 )}
               </div>
-              <input
+              <Input
                 id="password"
                 name="password"
                 type="password"
@@ -327,37 +292,33 @@ export default function Auth() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="Min 6 characters"
-                style={{ fontSize: '16px' }}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="h-10"
               />
             </div>
 
             {view === 'login' && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="remember"
                   checked={rememberMe}
-                  onChange={e => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  onCheckedChange={checked => setRememberMe(checked === true)}
                 />
-                <span className="text-sm text-gray-600 dark:text-gray-400">Remember me</span>
-              </label>
+                <Label htmlFor="remember" className="text-muted-foreground font-normal cursor-pointer">
+                  Remember me
+                </Label>
+              </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors mt-2"
-            >
+            <Button type="submit" disabled={loading} className="w-full h-10">
               {loading
                 ? 'Please wait...'
                 : view === 'login'
                 ? 'Log In'
                 : 'Create Account'}
-            </button>
+            </Button>
           </form>
-        </div>
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </AuthShell>
   )
 }

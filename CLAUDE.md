@@ -101,13 +101,43 @@ app.use('/api/workouts', authMiddleware, workoutsRouter);    // protected
 - Intentional exceptions where direct `src/lib/api.js` calls are kept:
   - `Auth.jsx` (login/register/forgot/reset), `Layout.jsx` and `Account.jsx` (logout), `Account.jsx` (changePassword) — one-shot navigation flows.
   - `Meals.jsx` calls `getFoodDetail` directly inside `pickFoodForLog` — single imperative fetch on click, not a cacheable read.
-  - `Admin.jsx` — not yet migrated; hooks are defined in `useAdmin.js` and ready when needed.
   - `UserContext.jsx` and `ThemeContext.jsx` — context boundaries that own their own lifecycle.
   - `ProtectedRoute.jsx` reads `isLoggedIn()` (a cookie helper, not server state).
 - After logout, components that call `logout()` must also call `queryClient.clear()` before navigating to `/login` so the previous session's cache can't leak into a same-tab re-login.
 
 ### Production Static File Serving
 In production, Express serves `src/dist/` as static files and catches all non-`/api/*` routes with the SPA fallback. The `build` output directory is `dist/` (relative to the `src/` directory where Vite is run).
+
+### UI & Styling (shadcn/ui + Tailwind v4)
+- **Tailwind v4**, CSS-first config. There is **no `tailwind.config.js`** — theme tokens, the
+  `@custom-variant dark`, and the v3→v4 border-color compat layer live in `src/index.css`. PostCSS
+  uses `@tailwindcss/postcss` (no `autoprefixer`).
+- **shadcn/ui** is the component system: `components.json` is configured for **`base-nova` style on
+  Base UI** (`@base-ui/react`), `tsx: false` (this is a JSX project), `baseColor: neutral`,
+  `cssVariables: true`. Components live in `src/components/ui/`. Add more with
+  `npx shadcn@latest add <name>` (it writes JSX + uses the `@/` alias).
+- **`@/` alias → `src/`** — defined in both `jsconfig.json` and `vite.config.js` (`resolve.alias`).
+  Import primitives as `@/components/ui/button`, helpers as `@/lib/utils` (`cn`).
+- **Theme = dark by default, violet primary.** New accounts are created with `darkMode: true`
+  (`server/routes/auth.js`); `ThemeContext` defaults to dark and toggles `class="dark"` on `<html>`
+  (also set in `src/index.html` to avoid a flash). A user's explicit light choice is respected.
+- **Build UI from tokens, not raw palette classes:** `bg-background` / `bg-card`, `text-foreground`
+  / `text-muted-foreground`, `border-border`, `text-primary` (the violet brand), `ring-foreground/10`.
+  Do **not** introduce `bg-white` / `*-gray-*` / `*-indigo-*` for chrome — use tokens so light/dark
+  both work. Migrated pages have zero non-token neutrals; keep it that way.
+- **Intentional semantic colors are kept** (not mapped to `primary`) on the data-surfacing pages
+  — **`Water.jsx`, `Workouts.jsx`, `Progress.jsx`, and `Dashboard.jsx`**: water is sky, workout
+  categories use `CATEGORY_COLORS`, and nutrition status uses red/amber/green + per-metric colors
+  (calories indigo, protein violet, etc.). `Dashboard.jsx` is included because it aggregates those
+  same domains (calorie/protein goal status, water, workout-logged), so it inherits their semantic
+  palette. Everywhere else, chrome must use tokens (no raw `gray`/`white`/`indigo`).
+- **Toasts:** Sonner. `import { toast } from 'sonner'`; one `<Toaster />` + `<TooltipProvider>` are
+  mounted at the app root in `App.jsx` (inside `ThemeProvider`). Use toasts for mutation success;
+  keep validation errors inline.
+- **Slide-overs → `Sheet`, modals → `Dialog`, confirms → `AlertDialog`** (e.g. Admin's
+  delete-user confirm). Recharts stays as-is, wrapped in a `Card` (Progress).
+- **All pages are migrated** to shadcn + the TanStack hooks, including `Admin.jsx` (now uses the
+  `useAdmin*` hooks instead of direct `api.js` calls).
 
 ## Validation Patterns
 

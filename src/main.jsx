@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import App from './App.jsx'
 import { UserProvider } from './context/UserContext.jsx'
 import { queryClient } from './lib/queryClient.js'
+import '@fontsource-variable/geist'
 import './index.css'
 
 const root = createRoot(document.getElementById('root'))

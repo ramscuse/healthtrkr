@@ -1,10 +1,15 @@
+import { Card, CardContent } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
+
 export default function StatCard({ title, label, value, subtext, colorClass }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">{title}</p>
-      {label && <p className="text-xs text-gray-500 mb-2">{label}</p>}
-      <p className={`text-3xl font-bold ${colorClass || 'text-gray-900'}`}>{value}</p>
-      {subtext && <p className="text-xs text-gray-500 mt-1">{subtext}</p>}
-    </div>
+    <Card>
+      <CardContent>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{title}</p>
+        {label && <p className="text-xs text-muted-foreground mb-2">{label}</p>}
+        <p className={cn('text-3xl font-bold', colorClass || 'text-foreground')}>{value}</p>
+        {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
+      </CardContent>
+    </Card>
   )
 }
