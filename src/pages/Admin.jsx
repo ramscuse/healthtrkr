@@ -174,6 +174,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onDeleted }) {
   }
 
   function handleConfirmDelete() {
+    if (deleting) return
     setConfirmOpen(false)
     setDeleteError('')
     deleteMutation.mutate(target.id, {

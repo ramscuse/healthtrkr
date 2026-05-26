@@ -125,9 +125,12 @@ In production, Express serves `src/dist/` as static files and catches all non-`/
   / `text-muted-foreground`, `border-border`, `text-primary` (the violet brand), `ring-foreground/10`.
   Do **not** introduce `bg-white` / `*-gray-*` / `*-indigo-*` for chrome — use tokens so light/dark
   both work. Migrated pages have zero non-token neutrals; keep it that way.
-- **Intentional semantic colors are kept** (not mapped to `primary`): water is sky
-  (`Water.jsx`, Dashboard water card), workout categories use `CATEGORY_COLORS` (`Workouts.jsx`),
-  and Progress metric colors (calories indigo, protein violet, etc.).
+- **Intentional semantic colors are kept** (not mapped to `primary`) on the data-surfacing pages
+  — **`Water.jsx`, `Workouts.jsx`, `Progress.jsx`, and `Dashboard.jsx`**: water is sky, workout
+  categories use `CATEGORY_COLORS`, and nutrition status uses red/amber/green + per-metric colors
+  (calories indigo, protein violet, etc.). `Dashboard.jsx` is included because it aggregates those
+  same domains (calorie/protein goal status, water, workout-logged), so it inherits their semantic
+  palette. Everywhere else, chrome must use tokens (no raw `gray`/`white`/`indigo`).
 - **Toasts:** Sonner. `import { toast } from 'sonner'`; one `<Toaster />` + `<TooltipProvider>` are
   mounted at the app root in `App.jsx` (inside `ThemeProvider`). Use toasts for mutation success;
   keep validation errors inline.

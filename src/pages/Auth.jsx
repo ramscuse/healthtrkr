@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { login, register, forgotPassword, resetPassword } from '../lib/api.js'
 import { useUser } from '../context/UserContext.jsx'
 import { Button } from '@/components/ui/button'
@@ -32,14 +33,6 @@ function ErrorAlert({ children }) {
   )
 }
 
-function SuccessAlert({ children }) {
-  return (
-    <Alert className="bg-emerald-500/10 border-emerald-500/30">
-      <AlertDescription className="text-emerald-700 dark:text-emerald-400">{children}</AlertDescription>
-    </Alert>
-  )
-}
-
 // view: 'login' | 'register' | 'forgot' | 'reset'
 export default function Auth() {
   const navigate = useNavigate()
@@ -53,12 +46,10 @@ export default function Auth() {
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   function switchTab(tab) {
     setView(tab)
     setError('')
-    setSuccess('')
     setName('')
     setEmail('')
     setPassword('')
@@ -91,7 +82,7 @@ export default function Auth() {
     setLoading(true)
     try {
       await forgotPassword(email)
-      setSuccess('Check your email — a 6-digit code is on its way.')
+      toast.success('Check your email — a 6-digit code is on its way.')
       setView('reset')
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
@@ -106,7 +97,7 @@ export default function Auth() {
     setLoading(true)
     try {
       await resetPassword(email, code.trim(), newPassword)
-      setSuccess('Password reset! You can now log in.')
+      toast.success('Password reset! You can now log in.')
       switchTab('login')
     } catch (err) {
       setError(err.message || 'Invalid or expired code.')
@@ -161,7 +152,7 @@ export default function Auth() {
           <CardHeader>
             <CardTitle>Enter your reset code</CardTitle>
             <CardDescription>
-              {success ? success : 'Check your email for a 6-digit code.'}
+              Check your email for a 6-digit code.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -245,7 +236,6 @@ export default function Auth() {
           </Tabs>
 
           <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-            {success && <SuccessAlert>{success}</SuccessAlert>}
             {error && <ErrorAlert>{error}</ErrorAlert>}
 
             {view === 'register' && (
@@ -286,7 +276,7 @@ export default function Auth() {
                 {view === 'login' && (
                   <button
                     type="button"
-                    onClick={() => { setError(''); setSuccess(''); setView('forgot') }}
+                    onClick={() => { setError(''); setView('forgot') }}
                     className="text-xs text-primary hover:underline"
                   >
                     Forgot password?

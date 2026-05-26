@@ -1,4 +1,4 @@
-import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [react()],
   build: { outDir: 'dist' },
   resolve: {
-    alias: { '@': path.resolve(import.meta.dirname, './src') }
+    // fileURLToPath(new URL(...)) works on all Node ESM versions
+    // (avoids the Node 20.11+ requirement of import.meta.dirname).
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }
   },
   server: {
     port: 5173,
