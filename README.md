@@ -35,6 +35,18 @@ PORT=3001
 VITE_API_URL=http://localhost:3001
 CORS_ORIGIN=http://localhost:5173
 
+# Food search (Meals page) — register at platform.fatsecret.com and use the
+# OAuth 1.0a "Consumer Key" and "Shared Secret" (NOT the OAuth 2.0 client_id).
+FATSECRET_CONSUMER_KEY=your-consumer-key
+FATSECRET_CONSUMER_SECRET=your-shared-secret
+
+# Optional — only for pooled/cloud Postgres (e.g. Vercel). `prisma migrate
+# deploy` uses this non-pooled URL. Leave unset for local/Docker.
+# DIRECT_URL="postgresql://..."
+
+# Optional — bind the Vite dev server to your LAN (default: localhost)
+# VITE_HOST=0.0.0.0
+
 # Optional — needed only if you want to re-seed the food database from USDA
 USDA_API_KEY=your-usda-api-key
 
