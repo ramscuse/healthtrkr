@@ -33,6 +33,13 @@ export const queryKeys = {
     byDate: (date) => ["meals", "diary", { date }],
     customFoods: ["meals", "customFoods"],
     presets: ["meals", "presets"],
+    // Per-meal-type favorite foods. favoritesAll is the invalidation prefix.
+    favoritesAll: ["meals", "favorites"],
+    favorites: (mealType) => ["meals", "favorites", { mealType }],
+    // Per-meal-type recently-logged foods (derived from diary history).
+    // recentAll is the invalidation prefix — meal writes sweep it.
+    recentAll: ["meals", "recent"],
+    recent: (mealType) => ["meals", "recent", { mealType }],
     search: (q) => ["meals", "search", q],
     foodDetail: (foodId) => ["meals", "food", foodId],
   },

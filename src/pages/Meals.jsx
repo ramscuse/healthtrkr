@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Pencil, Trash2, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, X, Loader2, Star } from "lucide-react";
 import { getFoodDetail } from "../lib/api.js";
 import {
   useMeals,
@@ -17,6 +17,10 @@ import {
   useDeleteMealPreset,
   useLogPreset,
   useFoodSearch,
+  useRecentFoods,
+  useFavoriteFoods,
+  useAddFavoriteFood,
+  useRemoveFavoriteFood,
 } from "../hooks/useMeals.js";
 import { useGoals, useUpdateGoals } from "../hooks/useGoals.js";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -84,6 +88,14 @@ function buildLogPayload(chosen, servingIdx, quantity) {
       quantity,
     };
   }
+  if (chosen.source === "barcode") {
+    // Barcode foods have a single server-resolved 100 g serving; no servingId.
+    return {
+      food: { source: "barcode", barcode: chosen.barcode },
+      serving: {},
+      quantity,
+    };
+  }
   return {
     food: { source: "fatsecret", fatSecretFoodId: chosen.fatSecretFoodId },
     serving: {
@@ -120,6 +132,21 @@ function customFoodToChosen(f) {
     foodType: f.foodType,
     servings: f.servings,
   };
+}
+
+// Convert a serializeFood-shaped row (favorites/custom foods, servings inline)
+// into "chosen food" shape. Source-aware so the row can be logged directly.
+function storedFoodToChosen(f) {
+  const base = {
+    foodName: f.name,
+    brandName: f.brandName,
+    foodType: f.foodType,
+    servings: f.servings,
+  };
+  if (f.source === "custom") return { ...base, source: "custom", customFoodId: f.id };
+  if (f.source === "barcode") return { ...base, source: "barcode", barcode: f.foodUrl };
+  // fatsecret — servings already carry fatSecretServingId via serializeServing.
+  return { ...base, source: "fatsecret", fatSecretFoodId: f.fatSecretFoodId };
 }
 
 function fmt(v, suffix = "") {
@@ -182,6 +209,10 @@ export default function Meals() {
   const goalsQuery = useGoals();
   const searchResultsQuery = useFoodSearch(debouncedSearchQuery);
   const presetSearchResultsQuery = useFoodSearch(debouncedPresetSearchQuery);
+  // Recents and favorites are per meal type and only needed while the
+  // slide-over is open.
+  const recentFoodsQuery = useRecentFoods(slideOver.mealType, { enabled: slideOver.open });
+  const favoritesQuery = useFavoriteFoods(slideOver.mealType, { enabled: slideOver.open });
 
   // ── Hooks: mutations ──
   const addMealMutation = useAddMeal();
@@ -194,6 +225,8 @@ export default function Meals() {
   const updatePresetMutation = useUpdateMealPreset();
   const deletePresetMutation = useDeleteMealPreset();
   const updateGoalsMutation = useUpdateGoals();
+  const addFavoriteMutation = useAddFavoriteFood();
+  const removeFavoriteMutation = useRemoveFavoriteFood();
   // Separate instance for the "Save current meal as Preset" inline form so
   // its isPending state doesn't collide with the preset editor.
   const saveAsPresetMutation = useCreateMealPreset();
@@ -213,6 +246,27 @@ export default function Meals() {
   const presets = presetsQuery.error ? [] : presetsQuery.data || [];
   const goals = goalsQuery.data;
 
+  const favorites = favoritesQuery.error ? [] : favoritesQuery.data || [];
+  const favoriteIds = new Set(favorites.map((f) => f.id));
+  // Recently-logged foods for this meal type, minus anything already shown in
+  // the custom "My Foods" list above (those are listed there with edit/delete).
+  const customFoodIds = new Set(customFoods.map((f) => f.id));
+  const recentFoods = (recentFoodsQuery.error ? [] : recentFoodsQuery.data || []).filter(
+    (f) => !customFoodIds.has(f.id)
+  );
+  // Track which row's star is mid-flight so we can show a spinner. Adds via a
+  // search hit are keyed by fatSecretFoodId (no stored id yet); everything else
+  // by the stored food id.
+  const favoritingFsId = addFavoriteMutation.isPending
+    ? addFavoriteMutation.variables?.fatSecretFoodId
+    : null;
+  const favoritingFoodId = addFavoriteMutation.isPending
+    ? addFavoriteMutation.variables?.foodId
+    : null;
+  const unfavoritingFoodId = removeFavoriteMutation.isPending
+    ? removeFavoriteMutation.variables?.foodId
+    : null;
+
   const searchResults = searchResultsQuery.data?.foods || [];
   const searchLoading = searchResultsQuery.isFetching;
   // The delete-custom-food button lives in the search panel, so its error
@@ -221,6 +275,8 @@ export default function Meals() {
     searchClientError ||
     (searchResultsQuery.error && searchResultsQuery.error.message) ||
     (deleteCustomFoodMutation.error && deleteCustomFoodMutation.error.message) ||
+    (addFavoriteMutation.error && addFavoriteMutation.error.message) ||
+    (removeFavoriteMutation.error && removeFavoriteMutation.error.message) ||
     "";
 
   const presetSearchResults = presetSearchResultsQuery.data?.foods || [];
@@ -540,6 +596,28 @@ export default function Meals() {
     deleteCustomFoodMutation.mutate(id);
   }
 
+  // ── Favorites ──
+  // Toggle the favorite state of an already-stored food for the current meal
+  // type. `food` is a serializeFood-shaped row (has a stored id).
+  function handleToggleFavorite(food) {
+    const mealType = slideOver.mealType;
+    if (favoriteIds.has(food.id)) {
+      removeFavoriteMutation.mutate({ foodId: food.id, mealType });
+    } else {
+      addFavoriteMutation.mutate({ foodId: food.id, mealType });
+    }
+  }
+
+  // Favorite a raw FatSecret search hit (not yet stored). The server
+  // materializes the food, then the favorites list refetches to show it.
+  function handleFavoriteSearchResult(food) {
+    addFavoriteMutation.mutate({
+      source: "fatsecret",
+      fatSecretFoodId: food.foodId,
+      mealType: slideOver.mealType,
+    });
+  }
+
   // ── Preset list actions ──
   function handleLogPreset(presetId) {
     setPresetClientError("");
@@ -747,8 +825,14 @@ export default function Meals() {
           <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
             {searchResults.map((food) => {
               const p = food.defaultPreview;
+              // Search hits carry a fatSecretFoodId, not a stored Food id;
+              // match against favorited FS foods to reflect the star state.
+              const favForFs = favorites.find((f) => f.fatSecretFoodId === food.foodId);
+              const isFav = !!favForFs;
+              const favPending =
+                favoritingFsId === food.foodId || (favForFs && unfavoritingFoodId === favForFs.id);
               return (
-                <li key={food.foodId}>
+                <li key={food.foodId} className="flex items-center gap-1 pr-2">
                   <button
                     type="button"
                     onClick={() =>
@@ -762,7 +846,7 @@ export default function Meals() {
                         servings: [],
                       })
                     }
-                    className="w-full text-left px-4 py-3 hover:bg-accent transition-colors"
+                    className="flex-1 min-w-0 text-left px-4 py-3 hover:bg-accent transition-colors"
                   >
                     <p className="text-sm font-medium">
                       {food.foodName}
@@ -776,6 +860,33 @@ export default function Meals() {
                         : "Tap to load servings"}
                     </p>
                   </button>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() =>
+                      isFav
+                        ? removeFavoriteMutation.mutate({
+                            foodId: favForFs.id,
+                            mealType: slideOver.mealType,
+                          })
+                        : handleFavoriteSearchResult(food)
+                    }
+                    disabled={favPending}
+                    aria-label={isFav ? `Unfavorite ${food.foodName}` : `Favorite ${food.foodName}`}
+                    aria-pressed={isFav}
+                    className={
+                      isFav
+                        ? "shrink-0 text-primary"
+                        : "shrink-0 text-muted-foreground hover:text-primary"
+                    }
+                  >
+                    {favPending ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Star className={isFav ? "fill-current" : ""} />
+                    )}
+                  </Button>
                 </li>
               );
             })}
@@ -798,6 +909,71 @@ export default function Meals() {
         >
           + Create custom food
         </button>
+
+        {favorites.length > 0 && (
+          <>
+            <Separator />
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                Favorites
+              </h3>
+              <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                {favorites.map((food) => {
+                  const d = food.servings[defaultServingIdx(food.servings)];
+                  const favPending = unfavoritingFoodId === food.id;
+                  return (
+                    <li
+                      key={food.id}
+                      className="flex items-center justify-between px-3 py-2.5 gap-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => pickFoodForLog(storedFoodToChosen(food))}
+                        className="flex-1 min-w-0 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
+                      >
+                        <p className="text-sm font-medium truncate">
+                          {food.name}
+                          {food.brandName ? (
+                            <span className="text-muted-foreground font-normal">
+                              {" "}
+                              · {food.brandName}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {d
+                            ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, "g")} protein`
+                            : ""}
+                        </p>
+                      </button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={() =>
+                          removeFavoriteMutation.mutate({
+                            foodId: food.id,
+                            mealType: slideOver.mealType,
+                          })
+                        }
+                        disabled={favPending}
+                        aria-label={`Unfavorite ${food.name}`}
+                        aria-pressed={true}
+                        className="shrink-0 text-primary"
+                      >
+                        {favPending ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <Star className="fill-current" />
+                        )}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </>
+        )}
 
         <Separator />
 
@@ -831,6 +1007,30 @@ export default function Meals() {
                         type="button"
                         size="icon-sm"
                         variant="ghost"
+                        onClick={() => handleToggleFavorite(food)}
+                        disabled={favoritingFoodId === food.id || unfavoritingFoodId === food.id}
+                        aria-label={
+                          favoriteIds.has(food.id)
+                            ? `Unfavorite ${food.name}`
+                            : `Favorite ${food.name}`
+                        }
+                        aria-pressed={favoriteIds.has(food.id)}
+                        className={
+                          favoriteIds.has(food.id)
+                            ? "text-primary"
+                            : "text-muted-foreground hover:text-primary"
+                        }
+                      >
+                        {favoritingFoodId === food.id || unfavoritingFoodId === food.id ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <Star className={favoriteIds.has(food.id) ? "fill-current" : ""} />
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
                         onClick={() => openCustomFoodEditor(food)}
                         aria-label={`Edit ${food.name}`}
                       >
@@ -856,6 +1056,68 @@ export default function Meals() {
                 );
               })}
             </ul>
+          )}
+
+          {recentFoods.length > 0 && (
+            <div className="mt-4">
+              <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                Recently logged
+              </h4>
+              <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                {recentFoods.map((food) => {
+                  const d = food.servings[defaultServingIdx(food.servings)];
+                  const isFav = favoriteIds.has(food.id);
+                  const favPending = favoritingFoodId === food.id || unfavoritingFoodId === food.id;
+                  return (
+                    <li
+                      key={food.id}
+                      className="flex items-center justify-between px-3 py-2.5 gap-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => pickFoodForLog(storedFoodToChosen(food))}
+                        className="flex-1 min-w-0 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
+                      >
+                        <p className="text-sm font-medium truncate">
+                          {food.name}
+                          {food.brandName ? (
+                            <span className="text-muted-foreground font-normal">
+                              {" "}
+                              · {food.brandName}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {d
+                            ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, "g")} protein`
+                            : ""}
+                        </p>
+                      </button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={() => handleToggleFavorite(food)}
+                        disabled={favPending}
+                        aria-label={isFav ? `Unfavorite ${food.name}` : `Favorite ${food.name}`}
+                        aria-pressed={isFav}
+                        className={
+                          isFav
+                            ? "shrink-0 text-primary"
+                            : "shrink-0 text-muted-foreground hover:text-primary"
+                        }
+                      >
+                        {favPending ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <Star className={isFav ? "fill-current" : ""} />
+                        )}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </div>
       </>
