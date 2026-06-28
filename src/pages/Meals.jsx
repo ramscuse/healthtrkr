@@ -246,7 +246,12 @@ export default function Meals() {
   const presets = presetsQuery.error ? [] : presetsQuery.data || [];
   const goals = goalsQuery.data;
 
-  const favorites = favoritesQuery.error ? [] : favoritesQuery.data || [];
+  // Derive favorites (and favoriteIds) only from successfully-fetched data so a
+  // read error isn't silently treated as "no favorites" — that would make the
+  // star toggle always take the add path and hide the failure. React Query
+  // retains the last good data across a background refetch error; on a hard
+  // initial failure data is undefined and the error is surfaced via searchError.
+  const favorites = favoritesQuery.data || [];
   const favoriteIds = new Set(favorites.map((f) => f.id));
   // Recently-logged foods for this meal type, minus anything already shown in
   // the custom "My Foods" list above (those are listed there with edit/delete).
@@ -274,6 +279,7 @@ export default function Meals() {
   const searchError =
     searchClientError ||
     (searchResultsQuery.error && searchResultsQuery.error.message) ||
+    (favoritesQuery.error && favoritesQuery.error.message) ||
     (deleteCustomFoodMutation.error && deleteCustomFoodMutation.error.message) ||
     (addFavoriteMutation.error && addFavoriteMutation.error.message) ||
     (removeFavoriteMutation.error && removeFavoriteMutation.error.message) ||
@@ -1144,7 +1150,11 @@ export default function Meals() {
             ) : null}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {chosenFood.source === "custom" ? "My Food" : "FatSecret"}
+            {chosenFood.source === "custom"
+              ? "My Food"
+              : chosenFood.source === "barcode"
+                ? "Barcode"
+                : "FatSecret"}
           </p>
         </div>
 
