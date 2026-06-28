@@ -209,8 +209,8 @@ export default function Meals() {
     (goalsQuery.error && goalsQuery.error.message) ||
     (deleteMealMutation.error && deleteMealMutation.error.message) ||
     "";
-  const customFoods = customFoodsQuery.error ? [] : (customFoodsQuery.data || []);
-  const presets = presetsQuery.error ? [] : (presetsQuery.data || []);
+  const customFoods = customFoodsQuery.error ? [] : customFoodsQuery.data || [];
+  const presets = presetsQuery.error ? [] : presetsQuery.data || [];
   const goals = goalsQuery.data;
 
   const searchResults = searchResultsQuery.data?.foods || [];

@@ -691,7 +691,12 @@ export default function Workouts() {
                   isAdded ? "ring-primary/40" : "ring-foreground/10 hover:ring-primary/30"
                 )}
                 onClick={() => toggleExercise(exercise)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExercise(exercise); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleExercise(exercise);
+                  }
+                }}
               >
                 {/* Custom delete button */}
                 {exercise.isCustom && (
