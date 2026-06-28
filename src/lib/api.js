@@ -173,6 +173,24 @@ export async function logPreset(presetId, { date, mealType }) {
   });
 }
 
+export async function getRecentFoods(mealType) {
+  return request(`/api/meals/recent?mealType=${encodeURIComponent(mealType)}`);
+}
+
+export async function getFavoriteFoods(mealType) {
+  return request(`/api/meals/favorites?mealType=${encodeURIComponent(mealType)}`);
+}
+
+export async function addFavoriteFood(body) {
+  return request("/api/meals/favorites", { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function removeFavoriteFood(foodId, mealType) {
+  return request(`/api/meals/favorites/${foodId}?mealType=${encodeURIComponent(mealType)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getCustomExercises() {
   return request("/api/workouts/custom-exercises");
 }

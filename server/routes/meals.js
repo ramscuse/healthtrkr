@@ -226,6 +226,49 @@ async function fetchBarcodeFood(barcode) {
   };
 }
 
+// Atomically upsert a barcode food and its single 100 g serving, returning
+// [food, serving]. `fields` is the validated { name, brandName, calories,
+// protein, carbs, fat } returned by fetchBarcodeFood. Wrapping in a transaction
+// means the upsert's ON CONFLICT row-lock is held until commit, so a concurrent
+// scan that races past the food upsert blocks before the serving findFirst,
+// preventing duplicate 100 g rows.
+async function materializeBarcodeFood(barcode, { name, brandName, calories, protein, carbs, fat }) {
+  return prisma.$transaction(async (tx) => {
+    const barcodeFood = await tx.food.upsert({
+      where: { source_foodUrl: { source: "barcode", foodUrl: barcode } },
+      create: {
+        source: "barcode",
+        name,
+        brandName,
+        foodType: "Brand",
+        foodUrl: barcode,
+      },
+      update: {},
+    });
+
+    let barcodeServing = await tx.foodServing.findFirst({
+      where: { foodId: barcodeFood.id },
+    });
+    if (!barcodeServing) {
+      barcodeServing = await tx.foodServing.create({
+        data: {
+          foodId: barcodeFood.id,
+          description: "100 g",
+          metricAmount: 100,
+          metricUnit: "g",
+          isDefault: true,
+          calories,
+          protein,
+          carbs,
+          fat,
+        },
+      });
+    }
+
+    return [barcodeFood, barcodeServing];
+  });
+}
+
 // GET /api/meals/barcode/:barcode
 // Returns a v5-shaped payload: one food with a single synthetic 100g serving.
 router.get("/barcode/:barcode", async (req, res, next) => {
@@ -372,46 +415,7 @@ router.post("/", async (req, res, next) => {
       const result = await fetchBarcodeFood(food.barcode);
       if (result.error) return res.status(result.statusCode).json({ error: result.error });
 
-      const { name, brandName, calories, protein, carbs, fat } = result.food;
-
-      // Atomically upsert the barcode food and its single 100 g serving.
-      // Wrapping in a transaction means the upsert's ON CONFLICT row-lock is
-      // held until commit, so a concurrent scan that races past the food upsert
-      // blocks before the serving findFirst, preventing duplicate 100 g rows.
-      [resolvedFood, resolvedServing] = await prisma.$transaction(async (tx) => {
-        const barcodeFood = await tx.food.upsert({
-          where: { source_foodUrl: { source: "barcode", foodUrl: food.barcode } },
-          create: {
-            source: "barcode",
-            name,
-            brandName,
-            foodType: "Brand",
-            foodUrl: food.barcode,
-          },
-          update: {},
-        });
-
-        let barcodeServing = await tx.foodServing.findFirst({
-          where: { foodId: barcodeFood.id },
-        });
-        if (!barcodeServing) {
-          barcodeServing = await tx.foodServing.create({
-            data: {
-              foodId: barcodeFood.id,
-              description: "100 g",
-              metricAmount: 100,
-              metricUnit: "g",
-              isDefault: true,
-              calories,
-              protein,
-              carbs,
-              fat,
-            },
-          });
-        }
-
-        return [barcodeFood, barcodeServing];
-      });
+      [resolvedFood, resolvedServing] = await materializeBarcodeFood(food.barcode, result.food);
     } else {
       return res
         .status(400)
@@ -883,6 +887,152 @@ router.post("/presets/:id/log", async (req, res, next) => {
       })
     );
     res.status(201).json(entries.map(serializeEntry));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Recent ────────────────────────────────────────────────────────────────
+// GET /api/meals/recent?mealType=<breakfast|lunch|dinner|snack>
+// Distinct foods the user has recently logged for this meal type, derived from
+// MealEntry history (no separate table). Returned in serializeFood shape so the
+// client can re-log them directly, like custom foods.
+router.get("/recent", async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+    const { mealType } = req.query;
+    if (!VALID_MEAL_TYPES.includes(mealType)) {
+      return res.status(400).json({ error: "Invalid mealType" });
+    }
+    // Pull a recent window of entries (whose serving still exists) and dedupe by
+    // food in JS — Prisma `distinct` only works on scalar columns of the queried
+    // model, not the joined food.id.
+    const entries = await prisma.mealEntry.findMany({
+      where: { userId, mealType, servingId: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: {
+        serving: {
+          include: { food: { include: { servings: { orderBy: { createdAt: "asc" } } } } },
+        },
+      },
+    });
+    const seen = new Set();
+    const foods = [];
+    for (const entry of entries) {
+      const food = entry.serving?.food;
+      if (!food || seen.has(food.id)) continue;
+      seen.add(food.id);
+      foods.push(serializeFood(food));
+      if (foods.length >= 15) break;
+    }
+    res.json(foods);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Favorites ─────────────────────────────────────────────────────────────
+// Per-user, per-meal-type favorite markers on a Food. Favorites reference the
+// shared Food rows (a FatSecret/barcode row is owned by nobody), so the marker
+// lives in its own FavoriteFood table rather than a boolean on Food.
+
+// GET /api/meals/favorites?mealType=<breakfast|lunch|dinner|snack>
+router.get("/favorites", async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+    const { mealType } = req.query;
+    if (!VALID_MEAL_TYPES.includes(mealType)) {
+      return res.status(400).json({ error: "Invalid mealType" });
+    }
+    const favorites = await prisma.favoriteFood.findMany({
+      where: { userId, mealType },
+      orderBy: { createdAt: "desc" },
+      include: { food: { include: { servings: { orderBy: { createdAt: "asc" } } } } },
+    });
+    res.json(favorites.map((f) => serializeFood(f.food)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/meals/favorites
+// body: { mealType, ...foodRef } where foodRef is one of:
+//   { foodId }                              — an already-stored Food
+//   { source:'fatsecret', fatSecretFoodId } — a raw search hit; materialized here
+//   { source:'barcode', barcode }           — a barcode; materialized here
+router.post("/favorites", async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+    const { mealType, foodId, source, fatSecretFoodId, barcode } = req.body || {};
+
+    if (!VALID_MEAL_TYPES.includes(mealType)) {
+      return res.status(400).json({ error: "Invalid mealType" });
+    }
+
+    // Resolve the request to a stored Food row, materializing FatSecret/barcode
+    // foods from the source of truth so a client can't supply bogus macros.
+    let food;
+    if (typeof foodId === "string" && foodId) {
+      food = await prisma.food.findUnique({
+        where: { id: foodId },
+        include: { servings: { orderBy: { createdAt: "asc" } } },
+      });
+      if (!food) return res.status(404).json({ error: "Food not found" });
+      // Custom foods are per-user; only the owner may favorite (and read) them.
+      if (food.source === "custom" && food.userId !== userId) {
+        return res.status(403).json({ error: "Not authorized to use that food" });
+      }
+    } else if (source === "fatsecret") {
+      if (!isPositiveInt(fatSecretFoodId)) {
+        return res.status(400).json({ error: "fatSecretFoodId must be a positive integer" });
+      }
+      const fsFood = await fetchFoodById(fatSecretFoodId);
+      if (!fsFood) return res.status(404).json({ error: "FatSecret food not found" });
+      const { food: storedFood } = await materializeFood(prisma, fsFood);
+      food = await prisma.food.findUnique({
+        where: { id: storedFood.id },
+        include: { servings: { orderBy: { createdAt: "asc" } } },
+      });
+    } else if (source === "barcode") {
+      if (typeof barcode !== "string" || !BARCODE_RE.test(barcode)) {
+        return res.status(400).json({ error: "barcode must be a valid 8–14 digit barcode" });
+      }
+      const result = await fetchBarcodeFood(barcode);
+      if (result.error) return res.status(result.statusCode).json({ error: result.error });
+      const [storedFood] = await materializeBarcodeFood(barcode, result.food);
+      food = await prisma.food.findUnique({
+        where: { id: storedFood.id },
+        include: { servings: { orderBy: { createdAt: "asc" } } },
+      });
+    } else {
+      return res
+        .status(400)
+        .json({ error: "foodId, or source 'fatsecret'/'barcode' with its id, is required" });
+    }
+
+    await prisma.favoriteFood.upsert({
+      where: { userId_foodId_mealType: { userId, foodId: food.id, mealType } },
+      create: { userId, foodId: food.id, mealType },
+      update: {},
+    });
+    res.status(201).json(serializeFood(food));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/meals/favorites/:foodId?mealType=<...>
+router.delete("/favorites/:foodId", async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+    const { foodId } = req.params;
+    const { mealType } = req.query;
+    if (!VALID_MEAL_TYPES.includes(mealType)) {
+      return res.status(400).json({ error: "Invalid mealType" });
+    }
+    await prisma.favoriteFood.deleteMany({ where: { userId, foodId, mealType } });
+    res.status(204).send();
   } catch (err) {
     next(err);
   }

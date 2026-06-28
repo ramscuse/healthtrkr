@@ -8,10 +8,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:server"],
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.env",
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "skipFiles": ["<node_internals>/**"]
+      "console": "integratedTerminal"
     },
     {
       "name": "Client",
@@ -20,9 +17,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:client"],
       "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "skipFiles": ["<node_internals>/**"]
+      "console": "integratedTerminal"
     },
     {
       "name": "Prisma Studio",

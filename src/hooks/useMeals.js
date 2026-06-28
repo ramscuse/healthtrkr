@@ -14,6 +14,10 @@ import {
   updatePreset,
   deletePreset,
   logPreset,
+  getRecentFoods,
+  getFavoriteFoods,
+  addFavoriteFood,
+  removeFavoriteFood,
 } from "../lib/api.js";
 import { queryKeys } from "./queryKeys.js";
 
@@ -41,6 +45,24 @@ export function useMealPresets(options = {}) {
     queryKey: queryKeys.meals.presets,
     queryFn: getPresets,
     ...options,
+  });
+}
+
+export function useRecentFoods(mealType, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.meals.recent(mealType),
+    queryFn: () => getRecentFoods(mealType),
+    ...options,
+    enabled: !!mealType && (options.enabled ?? true),
+  });
+}
+
+export function useFavoriteFoods(mealType, options = {}) {
+  return useQuery({
+    queryKey: queryKeys.meals.favorites(mealType),
+    queryFn: () => getFavoriteFoods(mealType),
+    ...options,
+    enabled: !!mealType && (options.enabled ?? true),
   });
 }
 
@@ -83,6 +105,8 @@ export function useAddMeal() {
         queryClient.invalidateQueries({ queryKey: queryKeys.meals.diary });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.progress.all });
+      // Recents are derived from logged entries — a new log can change them.
+      queryClient.invalidateQueries({ queryKey: queryKeys.meals.recentAll });
     },
   });
 }
@@ -97,6 +121,7 @@ export function useDeleteMeal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.meals.diary });
       queryClient.invalidateQueries({ queryKey: queryKeys.progress.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.meals.recentAll });
     },
   });
 }
@@ -114,6 +139,7 @@ export function useLogPreset() {
         queryClient.invalidateQueries({ queryKey: queryKeys.meals.diary });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.progress.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.meals.recentAll });
     },
   });
 }
@@ -144,6 +170,28 @@ export function useDeleteCustomFood() {
     mutationFn: (id) => deleteCustomFood(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.meals.customFoods });
+    },
+  });
+}
+
+// Favorites mutations touch only the favorites cache — they must not evict the
+// rate-limited search cache, customFoods, or the daily diary.
+export function useAddFavoriteFood() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => addFavoriteFood(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.meals.favoritesAll });
+    },
+  });
+}
+
+export function useRemoveFavoriteFood() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ foodId, mealType }) => removeFavoriteFood(foodId, mealType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.meals.favoritesAll });
     },
   });
 }

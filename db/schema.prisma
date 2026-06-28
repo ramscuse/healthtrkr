@@ -20,18 +20,19 @@ model User {
   tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
 
-  goals               Goals?
-  meals               MealEntry[]
-  workouts            WorkoutSession[]
-  healthData          HealthData[]
-  foods               Food[]
-  mealPresets         MealPreset[]
-  customExercises     CustomExercise[]
-  workoutPresets      WorkoutPreset[]
-  waterEntries        WaterEntry[]
-  passwordResetTokens PasswordResetToken[]
-  adminAuditEntries   AdminAuditLog[]      @relation("AdminActor")
-  targetedAuditEntries AdminAuditLog[]     @relation("AdminTarget")
+  goals                Goals?
+  meals                MealEntry[]
+  workouts             WorkoutSession[]
+  healthData           HealthData[]
+  foods                Food[]
+  favoriteFoods        FavoriteFood[]
+  mealPresets          MealPreset[]
+  customExercises      CustomExercise[]
+  workoutPresets       WorkoutPreset[]
+  waterEntries         WaterEntry[]
+  passwordResetTokens  PasswordResetToken[]
+  adminAuditEntries    AdminAuditLog[]      @relation("AdminActor")
+  targetedAuditEntries AdminAuditLog[]      @relation("AdminTarget")
 }
 
 model PasswordResetToken {
@@ -109,17 +110,18 @@ model MealEntry {
 }
 
 model Food {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   source          String
-  fatSecretFoodId Int?          @unique
+  fatSecretFoodId Int?           @unique
   userId          String?
-  user            User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
   brandName       String?
   foodType        String
   foodUrl         String?
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime       @default(now())
   servings        FoodServing[]
+  favoritedBy     FavoriteFood[]
 
   // Postgres treats NULL userIds as distinct, so multiple source='fatsecret'
   // rows (userId=null) can share a name. FS rows dedupe via fatSecretFoodId.
@@ -130,6 +132,22 @@ model Food {
   @@unique([source, foodUrl])
   @@index([source])
   @@index([userId])
+}
+
+// Per-user, per-meal-type favorite marker on a Food. Lives in its own table
+// (not a boolean on Food) because fatsecret/barcode Food rows are shared across
+// users (userId=null) — a column there would leak between users.
+model FavoriteFood {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodId    String
+  food      Food     @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  mealType  String // "breakfast" | "lunch" | "dinner" | "snack"
+  createdAt DateTime @default(now())
+
+  @@unique([userId, foodId, mealType])
+  @@index([userId, mealType])
 }
 
 model FoodServing {
