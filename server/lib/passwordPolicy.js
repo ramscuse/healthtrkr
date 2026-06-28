@@ -13,8 +13,8 @@ const MAX_LENGTH = 200;
 const MAX_BYTE_LENGTH = 72;
 
 export function validatePassword(password) {
-  if (typeof password !== 'string') {
-    return 'Password must be a string';
+  if (typeof password !== "string") {
+    return "Password must be a string";
   }
   if (password.length < MIN_LENGTH) {
     return `Password must be at least ${MIN_LENGTH} characters`;
@@ -22,11 +22,11 @@ export function validatePassword(password) {
   if (password.length > MAX_LENGTH) {
     return `Password must be at most ${MAX_LENGTH} characters`;
   }
-  if (Buffer.byteLength(password, 'utf8') > MAX_BYTE_LENGTH) {
+  if (Buffer.byteLength(password, "utf8") > MAX_BYTE_LENGTH) {
     return `Password must be at most ${MAX_BYTE_LENGTH} bytes (UTF-8)`;
   }
   if (password.trim().length === 0) {
-    return 'Password cannot be only whitespace';
+    return "Password cannot be only whitespace";
   }
   return null;
 }

@@ -30,6 +30,7 @@ No test suite exists in this project.
 All non-trivial changes follow this workflow:
 
 1. **Branch** — create a feature branch before making any edits:
+
    ```bash
    git checkout -b <type>/<short-description>
    # e.g. fix/mobile-scroll, feat/water-reminders
@@ -78,21 +79,26 @@ src/components/       — Layout (nav shell), ProtectedRoute, StatCard
 ## Key Architectural Decisions
 
 ### Route Mounting Order in server/index.js
+
 `/api/workouts/template` is mounted **before** the auth middleware and the main workouts router — it's intentionally public (no JWT required). The handler is exported as `workoutsTemplateHandler` from `api/workouts.js` and mounted explicitly:
+
 ```js
-app.get('/api/workouts/template', workoutsTemplateHandler);  // public
-app.use('/api/workouts', authMiddleware, workoutsRouter);    // protected
+app.get("/api/workouts/template", workoutsTemplateHandler); // public
+app.use("/api/workouts", authMiddleware, workoutsRouter); // protected
 ```
 
 ### Auth & Session Model
+
 - JWT is carried in an `HttpOnly`, `Secure` (prod-only), `SameSite=Strict` (prod) / `Lax` (dev) cookie named `token`. A companion non-httpOnly `sessionHint` cookie tells the frontend a session exists.
 - JWTs carry `{ userId, tokenVersion, iat }` — **no `exp`**. Revocation is server-side: `authMiddleware` reads the current `User.tokenVersion` on every request and 401s on mismatch. Logout, password change, password reset, and admin-set-password all bump `tokenVersion`.
 - CSRF is mitigated by `SameSite=Strict` on the token cookie + fixed-origin CORS (`credentials: true`, single allowed origin).
 
 ### Frontend API Client
+
 `src/lib/api.js` is the single source for all backend calls. The JWT lives in the httpOnly cookie set by the server, so the client doesn't read or attach it — `credentials: 'include'` carries it. 401s clear the local `sessionHint` and redirect to `/login` (the redirect happens inside `request()`; do not add a duplicate `onError` handler to the React Query client).
 
 ### Data Fetching (TanStack Query)
+
 - Pages and components never call `src/lib/api.js` directly for server data. Instead, they import hooks from `src/hooks/use<Domain>.js` (`useMeals`, `useWorkouts`, `useWater`, `useGoals`, `useAccount`, `useHealth`, `useProgress`, `useAdmin`).
 - Query keys are produced exclusively by the factories in `src/hooks/queryKeys.js`. Mutations invalidate via those same factories — never hand-write a key.
 - Within meals and workouts, daily-write entries live under a `diary` sub-prefix so that `useAddMeal` / `useLogWorkout` invalidations do **not** sweep the rate-limited FatSecret search cache or the static workout template (`staleTime: Infinity`).
@@ -106,9 +112,11 @@ app.use('/api/workouts', authMiddleware, workoutsRouter);    // protected
 - After logout, components that call `logout()` must also call `queryClient.clear()` before navigating to `/login` so the previous session's cache can't leak into a same-tab re-login.
 
 ### Production Static File Serving
+
 In production, Express serves `src/dist/` as static files and catches all non-`/api/*` routes with the SPA fallback. The `build` output directory is `dist/` (relative to the `src/` directory where Vite is run).
 
 ### UI & Styling (shadcn/ui + Tailwind v4)
+
 - **Tailwind v4**, CSS-first config. There is **no `tailwind.config.js`** — theme tokens, the
   `@custom-variant dark`, and the v3→v4 border-color compat layer live in `src/index.css`. PostCSS
   uses `@tailwindcss/postcss` (no `autoprefixer`).
@@ -142,6 +150,7 @@ In production, Express serves `src/dist/` as static files and catches all non-`/
 ## Validation Patterns
 
 All API routes validate inputs using these patterns:
+
 - **Dates**: `/^\d{4}-\d{2}-\d{2}$/` regex + `new Date()` validity check
 - **Numeric fields**: `typeof val === 'number' && isFinite(val)`
 - **Enum fields**: validated against explicit allowlists (e.g., `mealType` against `['breakfast','lunch','dinner','snack']`)
@@ -150,6 +159,7 @@ All API routes validate inputs using these patterns:
 ## Environment Variables
 
 Required in `.env`:
+
 - `DATABASE_URL` — PostgreSQL connection string
 - `JWT_SECRET` — used for HS256 token signing. Must be ≥ 32 chars in production (boot validation enforces this).
 - `FATSECRET_CONSUMER_KEY` — OAuth 1.0a consumer key for FatSecret food search API

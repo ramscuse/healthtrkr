@@ -1,16 +1,16 @@
-import 'dotenv/config';
-import bcrypt from 'bcrypt';
-import prisma from '../lib/prisma.js';
+import "dotenv/config";
+import bcrypt from "bcrypt";
+import prisma from "../lib/prisma.js";
 
 const [email, newPassword] = process.argv.slice(2);
 
 if (!email || !newPassword) {
-  console.error('Usage: node db/reset-password.js <email> <new-password>');
+  console.error("Usage: node db/reset-password.js <email> <new-password>");
   process.exit(1);
 }
 
 if (newPassword.length < 6) {
-  console.error('Password must be at least 6 characters.');
+  console.error("Password must be at least 6 characters.");
   process.exit(1);
 }
 

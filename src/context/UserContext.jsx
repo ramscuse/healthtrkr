@@ -1,37 +1,35 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { getAccount, isLoggedIn } from '../lib/api.js'
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { getAccount, isLoggedIn } from "../lib/api.js";
 
-const UserContext = createContext({ user: null, loading: true, refresh: async () => {} })
+const UserContext = createContext({ user: null, loading: true, refresh: async () => {} });
 
 export function UserProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     if (!isLoggedIn()) {
-      setUser(null)
-      setLoading(false)
-      return
+      setUser(null);
+      setLoading(false);
+      return;
     }
     try {
-      const u = await getAccount()
-      setUser(u || null)
+      const u = await getAccount();
+      setUser(u || null);
     } catch {
-      setUser(null)
+      setUser(null);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [])
+  }, []);
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
-  return (
-    <UserContext.Provider value={{ user, loading, refresh }}>
-      {children}
-    </UserContext.Provider>
-  )
+  return <UserContext.Provider value={{ user, loading, refresh }}>{children}</UserContext.Provider>;
 }
 
 export function useUser() {
-  return useContext(UserContext)
+  return useContext(UserContext);
 }

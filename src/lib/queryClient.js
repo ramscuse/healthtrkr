@@ -5,7 +5,7 @@
 // here — it would double-redirect. If we ever switch to a soft (client-side)
 // redirect for 401, revisit this and add explicit handling.
 
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient } from "@tanstack/react-query";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,4 +20,4 @@ export const queryClient = new QueryClient({
       retry: 0,
     },
   },
-})
+});

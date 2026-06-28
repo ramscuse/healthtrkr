@@ -1,10 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import {
-  getProgressSummary,
-  getProgressWeekly,
-  getProgressRange,
-} from '../lib/api.js'
-import { queryKeys } from './queryKeys.js'
+import { useQuery } from "@tanstack/react-query";
+import { getProgressSummary, getProgressWeekly, getProgressRange } from "../lib/api.js";
+import { queryKeys } from "./queryKeys.js";
 
 export function useProgressSummary(date, options = {}) {
   return useQuery({
@@ -12,7 +8,7 @@ export function useProgressSummary(date, options = {}) {
     queryFn: () => getProgressSummary(date),
     ...options,
     enabled: !!date && (options.enabled ?? true),
-  })
+  });
 }
 
 export function useProgressWeekly(startDate, options = {}) {
@@ -21,7 +17,7 @@ export function useProgressWeekly(startDate, options = {}) {
     queryFn: () => getProgressWeekly(startDate),
     ...options,
     enabled: !!startDate && (options.enabled ?? true),
-  })
+  });
 }
 
 export function useProgressRange(startDate, numDays, options = {}) {
@@ -29,10 +25,6 @@ export function useProgressRange(startDate, numDays, options = {}) {
     queryKey: queryKeys.progress.range(startDate, numDays),
     queryFn: () => getProgressRange(startDate, numDays),
     ...options,
-    enabled:
-      !!startDate &&
-      Number.isFinite(numDays) &&
-      numDays > 0 &&
-      (options.enabled ?? true),
-  })
+    enabled: !!startDate && Number.isFinite(numDays) && numDays > 0 && (options.enabled ?? true),
+  });
 }

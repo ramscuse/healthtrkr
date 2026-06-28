@@ -10,19 +10,20 @@
  * Streams line-by-line through the gzip-compressed JSONL, stops as soon as
  * MAX_NEW new foods have been collected — no need to download the full file.
  */
-import { createGunzip } from 'zlib';
-import { createInterface } from 'readline';
-import { spawn } from 'child_process';
-import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { createGunzip } from "zlib";
+import { createInterface } from "readline";
+import { spawn } from "child_process";
+import { writeFileSync, readFileSync, existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FOODS_FILE = join(__dirname, '..', 'data', 'foods.json');
+const FOODS_FILE = join(__dirname, "..", "data", "foods.json");
 
 // Direct S3 URL — avoids a redirect hop that can be unreliable
-const JSONL_URL = 'https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/openfoodfacts-products.jsonl.gz';
-const USER_AGENT = 'healthtrkr/1.0 (personal fitness tracker; non-commercial)';
+const JSONL_URL =
+  "https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/openfoodfacts-products.jsonl.gz";
+const USER_AGENT = "healthtrkr/1.0 (personal fitness tracker; non-commercial)";
 
 // Allow caller to override the limit: `npm run db:seed-off-foods -- 60000`
 const MAX_NEW = (() => {
@@ -34,64 +35,83 @@ const MAX_NEW = (() => {
   return 30_000; // default
 })();
 
-
 // --- Load existing foods ---
 let existing = [];
 if (existsSync(FOODS_FILE)) {
-  existing = JSON.parse(readFileSync(FOODS_FILE, 'utf8'));
+  existing = JSON.parse(readFileSync(FOODS_FILE, "utf8"));
   console.log(`Loaded ${existing.length.toLocaleString()} existing foods from data/foods.json`);
 } else {
-  console.warn('data/foods.json not found — run node db/seed-foods.js first');
+  console.warn("data/foods.json not found — run node db/seed-foods.js first");
 }
 
-const seen = new Set(existing.map(f => f.name.toLowerCase()));
+const seen = new Set(existing.map((f) => f.name.toLowerCase()));
 const added = [];
 
-console.log(`Streaming Open Food Facts JSONL (targeting ${MAX_NEW.toLocaleString()} new US foods)...`);
-console.log('(Download will stop once target is reached)\n');
+console.log(
+  `Streaming Open Food Facts JSONL (targeting ${MAX_NEW.toLocaleString()} new US foods)...`
+);
+console.log("(Download will stop once target is reached)\n");
 
 // Use curl for the download — reliable on WSL2 where Node.js DNS can be flaky
-const curl = spawn('curl', [
-  '--location',        // follow redirects
-  '--silent',
-  '--show-error',
-  '--user-agent', USER_AGENT,
-  JSONL_URL,
-], { stdio: ['ignore', 'pipe', 'inherit'] });
+const curl = spawn(
+  "curl",
+  [
+    "--location", // follow redirects
+    "--silent",
+    "--show-error",
+    "--user-agent",
+    USER_AGENT,
+    JSONL_URL,
+  ],
+  { stdio: ["ignore", "pipe", "inherit"] }
+);
 
 await new Promise((resolve, reject) => {
   const gunzip = createGunzip();
   const rl = createInterface({ input: curl.stdout.pipe(gunzip), crlfDelay: Infinity });
   let linesRead = 0;
   let bytesIn = 0;
+  let intentionallyStopped = false;
 
-  curl.stdout.on('data', chunk => { bytesIn += chunk.length; });
+  curl.stdout.on("data", (chunk) => {
+    bytesIn += chunk.length;
+  });
 
-  rl.on('line', (line) => {
+  rl.on("line", (line) => {
     linesRead++;
     if (!line.trim()) return;
 
     let p;
-    try { p = JSON.parse(line); } catch { return; }
+    try {
+      p = JSON.parse(line);
+    } catch {
+      return;
+    }
 
     // Must be a US product
-    if (!p.countries_tags?.includes('en:united-states')) return;
+    if (!p.countries_tags?.includes("en:united-states")) return;
 
-    const name = (p.product_name_en || p.product_name || '').trim();
+    const name = (p.product_name_en || p.product_name || "").trim();
     if (!name) return;
 
-    const cal = Number(p.nutriments?.['energy-kcal_100g'] ?? 0);
+    const cal = Number(p.nutriments?.["energy-kcal_100g"] ?? 0);
     if (!Number.isFinite(cal) || !(cal > 0)) return;
 
-    const protein = Math.round(Number(p.nutriments?.proteins_100g      ?? 0) * 10) / 10;
-    const carbs   = Math.round(Number(p.nutriments?.carbohydrates_100g ?? 0) * 10) / 10;
-    const fat     = Math.round(Number(p.nutriments?.fat_100g           ?? 0) * 10) / 10;
+    const protein = Math.round(Number(p.nutriments?.proteins_100g ?? 0) * 10) / 10;
+    const carbs = Math.round(Number(p.nutriments?.carbohydrates_100g ?? 0) * 10) / 10;
+    const fat = Math.round(Number(p.nutriments?.fat_100g ?? 0) * 10) / 10;
 
     // Reject physically impossible entries: macros can't exceed 100g per 100g of food,
     // and calories can't exceed ~900 kcal/100g (theoretical max for pure fat/oil).
     // Also guards against NaN from non-numeric OFf string values.
-    if (!Number.isFinite(protein) || !Number.isFinite(carbs) || !Number.isFinite(fat) ||
-        protein + carbs + fat > 100 || cal > 900) return;
+    if (
+      !Number.isFinite(protein) ||
+      !Number.isFinite(carbs) ||
+      !Number.isFinite(fat) ||
+      protein + carbs + fat > 100 ||
+      cal > 900
+    )
+      return;
 
     const key = name.toLowerCase();
     if (seen.has(key)) return;
@@ -107,25 +127,29 @@ await new Promise((resolve, reject) => {
     }
 
     if (added.length >= MAX_NEW) {
+      intentionallyStopped = true;
       rl.close();
       curl.kill(); // stop downloading once we have enough
     }
   });
 
-  rl.on('close', resolve);
-  rl.on('error', reject);
-  // When we kill curl early the gunzip stream gets an abrupt EOF — that's expected
-  gunzip.on('error', (err) => {
-    if (added.length >= MAX_NEW || err.code === 'Z_BUF_ERROR') resolve();
-    else reject(err);
+  rl.on("error", reject);
+  // When we kill curl early the gunzip stream gets an abrupt EOF — suppress only in that case.
+  // Z_BUF_ERROR (no pending output) is always harmless. Curl's exit code is the final authority.
+  gunzip.on("error", (err) => {
+    if (!intentionallyStopped && err.code !== "Z_BUF_ERROR") reject(err);
   });
-  curl.on('error', reject);
+  curl.on("error", reject);
+  curl.on("close", (code, signal) => {
+    if (intentionallyStopped || code === 0) resolve();
+    else reject(new Error(`curl exited with code ${code}${signal ? ` (signal: ${signal})` : ""}`));
+  });
 });
 
 console.log(`\n\n  Done. Added ${added.length.toLocaleString()} new foods from Open Food Facts.`);
 
 if (added.length === 0) {
-  console.log('Nothing new to save.');
+  console.log("Nothing new to save.");
   process.exit(0);
 }
 
@@ -134,4 +158,6 @@ const merged = [...existing, ...added].sort((a, b) => a.name.localeCompare(b.nam
 writeFileSync(FOODS_FILE, JSON.stringify(merged));
 
 const sizeMB = (Buffer.byteLength(JSON.stringify(merged)) / 1024 / 1024).toFixed(1);
-console.log(`Saved ${merged.length.toLocaleString()} total foods to data/foods.json (${sizeMB} MB)`);
+console.log(
+  `Saved ${merged.length.toLocaleString()} total foods to data/foods.json (${sizeMB} MB)`
+);

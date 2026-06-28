@@ -120,19 +120,19 @@ Just register a new account at `/login` (Register tab). Each user has fully isol
 
 ## Available Scripts
 
-| Script | Description |
-|---|---|
-| `npm run dev` | Start backend + frontend together |
-| `npm run dev:server` | Backend only (nodemon, port 3001) |
-| `npm run dev:client` | Frontend only (Vite, port 5173) |
-| `npm run build` | Production frontend build |
-| `npm start` | Production server (serves built frontend) |
-| `npm run db:migrate` | Run Prisma migrations |
-| `npm run db:seed` | Seed test user and default goals |
-| `npm run db:seed-foods` | Seed local food search database (USDA) |
-| `npm run db:seed-off-foods` | Seed additional foods from Open Food Facts |
+| Script                      | Description                                     |
+| --------------------------- | ----------------------------------------------- |
+| `npm run dev`               | Start backend + frontend together               |
+| `npm run dev:server`        | Backend only (nodemon, port 3001)               |
+| `npm run dev:client`        | Frontend only (Vite, port 5173)                 |
+| `npm run build`             | Production frontend build                       |
+| `npm start`                 | Production server (serves built frontend)       |
+| `npm run db:migrate`        | Run Prisma migrations                           |
+| `npm run db:seed`           | Seed test user and default goals                |
+| `npm run db:seed-foods`     | Seed local food search database (USDA)          |
+| `npm run db:seed-off-foods` | Seed additional foods from Open Food Facts      |
 | `npm run db:reset-password` | CLI utility to reset a user's password directly |
-| `npm run db:studio` | Open Prisma Studio (DB browser) |
+| `npm run db:studio`         | Open Prisma Studio (DB browser)                 |
 
 ---
 
