@@ -647,6 +647,9 @@ export default function Workouts() {
             + Custom Exercise
           </Button>
         </div>
+        {customExercisesQuery.isError && (
+          <p className="text-sm text-destructive mb-3">Failed to load custom exercises.</p>
+        )}
 
         {/* Category tabs */}
         <div className="flex gap-0 border-b border-border mb-4 overflow-x-auto">
@@ -681,11 +684,14 @@ export default function Workouts() {
             return (
               <div
                 key={exercise.id}
+                role="button"
+                tabIndex={0}
                 className={cn(
                   "bg-card rounded-xl p-4 cursor-pointer transition-colors relative ring-1",
                   isAdded ? "ring-primary/40" : "ring-foreground/10 hover:ring-primary/30"
                 )}
                 onClick={() => toggleExercise(exercise)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExercise(exercise); } }}
               >
                 {/* Custom delete button */}
                 {exercise.isCustom && (
@@ -755,6 +761,8 @@ export default function Workouts() {
               <Skeleton key={i} className="h-16 rounded-xl" />
             ))}
           </div>
+        ) : historyQuery.isError ? (
+          <p className="text-sm text-destructive">Failed to load workout history.</p>
         ) : history.length > 0 ? (
           <Card className="py-0 overflow-hidden">
             <ul className="divide-y divide-border">
@@ -956,6 +964,8 @@ export default function Workouts() {
                       <Skeleton key={i} className="h-24 rounded-xl" />
                     ))}
                   </div>
+                ) : presetsQuery.isError ? (
+                  <p className="text-sm text-destructive py-4">Failed to load workout presets.</p>
                 ) : presets.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-sm text-muted-foreground mb-4">No workout presets yet.</p>
@@ -1109,10 +1119,11 @@ export default function Workouts() {
                     const isAdded = presetPlanIds.has(exercise.id);
                     const colors = CATEGORY_COLORS[exercise.category] || {};
                     return (
-                      <div
+                      <button
                         key={exercise.id}
+                        type="button"
                         className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer border transition-colors",
+                          "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 border transition-colors text-left",
                           isAdded
                             ? "bg-primary/10 border-primary/30"
                             : "border-border hover:bg-accent"
@@ -1130,7 +1141,7 @@ export default function Workouts() {
                           <span className="text-xs text-muted-foreground">Custom</span>
                         )}
                         {isAdded && <Check className="size-4 text-primary shrink-0" />}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

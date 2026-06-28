@@ -38,6 +38,12 @@ export default function Water() {
 
   const entries = Array.isArray(entriesQuery.data) ? entriesQuery.data : [];
   const loading = entriesQuery.isPending;
+  const entriesQueryError = entriesQuery.isError
+    ? entriesQuery.error?.message || "Failed to load water entries."
+    : null;
+  const goalsQueryError = goalsQuery.isError
+    ? goalsQuery.error?.message || "Failed to load goals."
+    : null;
   const total = entries.reduce((sum, e) => sum + e.amount, 0);
   const cups = (total / 8).toFixed(1);
   const waterGoal = goalsQuery.data?.waterGoal ?? null;
@@ -123,13 +129,17 @@ export default function Water() {
               {selectedDate === today ? "Today's Intake" : selectedDate}
             </p>
             {!goalEditing ? (
-              <button
-                type="button"
-                onClick={() => setGoalEditing(true)}
-                className="text-xs font-semibold text-sky-500 hover:underline"
-              >
-                {waterGoal ? `Goal: ${waterGoal} oz` : "Set goal"}
-              </button>
+              goalsQueryError ? (
+                <span className="text-xs text-destructive">{goalsQueryError}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setGoalEditing(true)}
+                  className="text-xs font-semibold text-sky-500 hover:underline"
+                >
+                  {waterGoal ? `Goal: ${waterGoal} oz` : "Set goal"}
+                </button>
+              )
             ) : (
               <div className="flex items-center gap-2">
                 <Input
@@ -239,6 +249,8 @@ export default function Water() {
               <Skeleton key={i} className="h-12 rounded-xl" />
             ))}
           </div>
+        ) : entriesQueryError ? (
+          <p className="text-sm text-destructive">{entriesQueryError}</p>
         ) : entries.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No water logged{selectedDate === today ? " yet today" : " on this day"}.

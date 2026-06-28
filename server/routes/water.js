@@ -8,7 +8,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function parseDate(dateStr) {
   if (!DATE_RE.test(dateStr)) return null;
   const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? null : d;
+  if (isNaN(d.getTime())) return null;
+  // Reject overflow dates that JS normalizes (e.g. 2024-02-31 → March 2)
+  const [y, m, day] = dateStr.split("-").map(Number);
+  if (d.getUTCFullYear() !== y || d.getUTCMonth() + 1 !== m || d.getUTCDate() !== day) return null;
+  return d;
 }
 
 // GET /api/water?date=YYYY-MM-DD  — entries for a day

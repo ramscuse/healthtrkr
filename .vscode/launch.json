@@ -5,28 +5,39 @@
       "name": "Server",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/nodemon",
-      "args": ["server/index.js"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:server"],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen"
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"]
     },
     {
       "name": "Client",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/vite",
-      "args": ["src", "--host", "--config", "vite.config.js"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:client"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen"
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Prisma Studio",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "db:studio"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
     }
   ],
   "compounds": [
     {
-      "name": "Dev (Server + Client)",
-      "configurations": ["Server", "Client"],
+      "name": "Dev",
+      "configurations": ["Server", "Client", "Prisma Studio"],
       "stopAll": true
     }
   ]

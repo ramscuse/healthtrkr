@@ -12,11 +12,20 @@ router.put("/active-calories", async (req, res, next) => {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
     }
+    const parsed = new Date(date);
+    if (
+      isNaN(parsed.getTime()) ||
+      parsed.getUTCFullYear() !== parseInt(date.slice(0, 4), 10) ||
+      parsed.getUTCMonth() + 1 !== parseInt(date.slice(5, 7), 10) ||
+      parsed.getUTCDate() !== parseInt(date.slice(8, 10), 10)
+    ) {
+      return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
+    }
     if (typeof calories !== "number" || !isFinite(calories) || calories < 0) {
       return res.status(400).json({ error: "calories must be a non-negative number" });
     }
 
-    const d = new Date(date);
+    const d = parsed;
     d.setUTCHours(0, 0, 0, 0);
 
     const record = await prisma.healthData.upsert({

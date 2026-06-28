@@ -32,6 +32,7 @@ function formatDate(dateStr) {
 }
 
 function getCalorieColor(consumed, min, max) {
+  if (min == null || max == null) return "text-foreground";
   if (consumed > max) return "text-red-500";
   if (consumed < min) return "text-yellow-500";
   return "text-green-500";
@@ -112,14 +113,14 @@ export default function Dashboard() {
   const { consumed = {}, burned = {}, net = 0, deficit = 0, workoutLogged = false } = summary || {};
 
   const calorieColor = getCalorieColor(
-    consumed.calories || 0,
-    goals.calorieMin || 0,
-    goals.calorieMax || 0
+    consumed.calories ?? 0,
+    goals.calorieMin ?? null,
+    goals.calorieMax ?? null
   );
   const proteinColor = getCalorieColor(
-    consumed.protein || 0,
-    goals.proteinMin || 0,
-    goals.proteinMax || 0
+    consumed.protein ?? 0,
+    goals.proteinMin ?? null,
+    goals.proteinMax ?? null
   );
 
   const activeCaloriesDisplay =

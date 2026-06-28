@@ -1,17 +1,21 @@
 import { Router } from "express";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+import customParseFormat from "dayjs/plugin/customParseFormat.js";
 import prisma from "../../lib/prisma.js";
 import { searchFoods, fetchFoodById, materializeFood } from "../fatSecret.js";
+
+dayjs.extend(utc);
+dayjs.extend(customParseFormat);
 
 const router = Router();
 
 const VALID_MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 const BARCODE_RE = /^\d{8,14}$/;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseDate(dateStr) {
-  if (!DATE_RE.test(dateStr)) return null;
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? null : d;
+  const d = dayjs.utc(dateStr, "YYYY-MM-DD", true);
+  return d.isValid() ? d : null;
 }
 
 function isFiniteNumber(v) {
@@ -148,6 +152,71 @@ router.get("/foods/:foodId", async (req, res, next) => {
   }
 });
 
+// Shared: fetch + validate a barcode from OpenFoodFacts.
+// Returns { food: { name, brandName, calories, protein, carbs, fat } } on success,
+// or { error, statusCode } on failure.
+async function fetchBarcodeFood(barcode) {
+  let data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    let response;
+    try {
+      response = await fetch(
+        `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`,
+        { signal: controller.signal }
+      );
+    } catch (err) {
+      const isTimeout = err.name === "AbortError";
+      return {
+        error: isTimeout ? "Barcode lookup timed out" : "Barcode lookup unavailable",
+        statusCode: isTimeout ? 504 : 502,
+      };
+    }
+    try {
+      data = await response.json();
+    } catch {
+      return { error: "Barcode lookup returned invalid data", statusCode: 502 };
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (data.status !== 1) return { error: "Product not found", statusCode: 404 };
+
+  const p = data.product;
+  const calories = Number(p.nutriments?.["energy-kcal_100g"] ?? 0);
+  const protein = Number(p.nutriments?.proteins_100g ?? 0);
+  const carbs = Number(p.nutriments?.carbohydrates_100g ?? 0);
+  const fat = Number(p.nutriments?.fat_100g ?? 0);
+
+  if (
+    !isFinite(calories) ||
+    !isFinite(protein) ||
+    !isFinite(carbs) ||
+    !isFinite(fat) ||
+    calories < 0 ||
+    protein < 0 ||
+    carbs < 0 ||
+    fat < 0 ||
+    protein + carbs + fat > 100 ||
+    calories > 900
+  ) {
+    return { error: "Product nutrition data is unavailable", statusCode: 404 };
+  }
+
+  return {
+    food: {
+      name: p.product_name || "",
+      brandName: p.brands || null,
+      calories,
+      protein,
+      carbs,
+      fat,
+    },
+  };
+}
+
 // GET /api/meals/barcode/:barcode
 // Returns a v5-shaped payload: one food with a single synthetic 100g serving.
 router.get("/barcode/:barcode", async (req, res, next) => {
@@ -157,45 +226,16 @@ router.get("/barcode/:barcode", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid barcode format" });
     }
 
-    let data;
-    try {
-      const response = await fetch(
-        `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`
-      );
-      data = await response.json();
-    } catch {
-      return res.status(404).json({ error: "Product not found" });
-    }
+    const result = await fetchBarcodeFood(barcode);
+    if (result.error) return res.status(result.statusCode).json({ error: result.error });
 
-    if (data.status !== 1) return res.status(404).json({ error: "Product not found" });
-
-    const p = data.product;
-    const calories = Number(p.nutriments?.["energy-kcal_100g"] ?? 0);
-    const protein = Number(p.nutriments?.proteins_100g ?? 0);
-    const carbs = Number(p.nutriments?.carbohydrates_100g ?? 0);
-    const fat = Number(p.nutriments?.fat_100g ?? 0);
-
-    if (
-      !isFinite(calories) ||
-      !isFinite(protein) ||
-      !isFinite(carbs) ||
-      !isFinite(fat) ||
-      calories < 0 ||
-      protein < 0 ||
-      carbs < 0 ||
-      fat < 0 ||
-      protein + carbs + fat > 100 ||
-      calories > 900
-    ) {
-      return res.status(404).json({ error: "Product nutrition data is unavailable" });
-    }
-
+    const { name, brandName, calories, protein, carbs, fat } = result.food;
     res.json({
       barcode,
       food: {
         source: "barcode",
-        name: p.product_name || "",
-        brandName: p.brands || null,
+        name,
+        brandName,
         foodType: "Brand",
         servings: [
           {
@@ -226,10 +266,8 @@ router.get("/", async (req, res, next) => {
     const parsedDate = parseDate(date);
     if (!parsedDate) return res.status(400).json({ error: "date must be in YYYY-MM-DD format" });
 
-    const start = new Date(parsedDate);
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(parsedDate);
-    end.setUTCHours(23, 59, 59, 999);
+    const start = parsedDate.startOf("day").toDate();
+    const end = parsedDate.endOf("day").toDate();
 
     const entries = await prisma.mealEntry.findMany({
       where: { userId, date: { gte: start, lte: end } },
@@ -256,10 +294,12 @@ router.get("/", async (req, res, next) => {
 
 // POST /api/meals
 // body: { date, mealType, quantity, food, serving }
-//   food:    { source:'fatsecret', fatSecretFoodId, foodName, brandName, foodType, foodUrl, servings:[...] }
+//   food:    { source:'fatsecret', fatSecretFoodId, ... }
 //         |  { source:'custom' }
-//   serving: { source:'fatsecret', fatSecretServingId, ...full inline payload }
+//         |  { source:'barcode', barcode:'<8-14 digits>' }
+//   serving: { source:'fatsecret', fatSecretServingId, ... }
 //         |  { source:'custom', servingId }
+//         |  {} (ignored for barcode — the 100g serving is resolved server-side)
 router.post("/", async (req, res, next) => {
   try {
     const { userId } = req.user;
@@ -315,8 +355,58 @@ router.post("/", async (req, res, next) => {
       }
       resolvedServing = dbServing;
       resolvedFood = dbServing.food;
+    } else if (food.source === "barcode") {
+      if (typeof food.barcode !== "string" || !BARCODE_RE.test(food.barcode)) {
+        return res.status(400).json({ error: "food.barcode must be a valid 8–14 digit barcode" });
+      }
+      // Re-fetch server-side so the client cannot supply or alter nutrition data.
+      const result = await fetchBarcodeFood(food.barcode);
+      if (result.error) return res.status(result.statusCode).json({ error: result.error });
+
+      const { name, brandName, calories, protein, carbs, fat } = result.food;
+
+      // Upsert the barcode food row (deduped by foodUrl = barcode).
+      let barcodeFood = await prisma.food.findFirst({
+        where: { source: "barcode", foodUrl: food.barcode },
+      });
+      if (!barcodeFood) {
+        barcodeFood = await prisma.food.create({
+          data: {
+            source: "barcode",
+            name,
+            brandName,
+            foodType: "Brand",
+            foodUrl: food.barcode,
+          },
+        });
+      }
+
+      // Upsert the single 100g serving for this barcode food.
+      let barcodeServing = await prisma.foodServing.findFirst({
+        where: { foodId: barcodeFood.id },
+      });
+      if (!barcodeServing) {
+        barcodeServing = await prisma.foodServing.create({
+          data: {
+            foodId: barcodeFood.id,
+            description: "100 g",
+            metricAmount: 100,
+            metricUnit: "g",
+            isDefault: true,
+            calories,
+            protein,
+            carbs,
+            fat,
+          },
+        });
+      }
+
+      resolvedFood = barcodeFood;
+      resolvedServing = barcodeServing;
     } else {
-      return res.status(400).json({ error: 'food.source must be "fatsecret" or "custom"' });
+      return res
+        .status(400)
+        .json({ error: 'food.source must be "fatsecret", "custom", or "barcode"' });
     }
 
     const snap = snapshot(
@@ -330,7 +420,7 @@ router.post("/", async (req, res, next) => {
     const entry = await prisma.mealEntry.create({
       data: {
         userId,
-        date: parsedDate,
+        date: parsedDate.toDate(),
         mealType,
         servingId: resolvedServing.id,
         ...snap,
@@ -775,7 +865,7 @@ router.post("/presets/:id/log", async (req, res, next) => {
         return prisma.mealEntry.create({
           data: {
             userId,
-            date: parsedDate,
+            date: parsedDate.toDate(),
             mealType,
             servingId: item.servingId,
             ...snap,

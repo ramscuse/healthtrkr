@@ -48,6 +48,13 @@ router.put("/", async (req, res, next) => {
       }
     }
 
+    if (calorieMin !== undefined && calorieMax !== undefined && calorieMin > calorieMax) {
+      return res.status(400).json({ error: "calorieMin must not exceed calorieMax" });
+    }
+    if (proteinMin !== undefined && proteinMax !== undefined && proteinMin > proteinMax) {
+      return res.status(400).json({ error: "proteinMin must not exceed proteinMax" });
+    }
+
     const goals = await prisma.goals.upsert({
       where: { userId },
       update: {

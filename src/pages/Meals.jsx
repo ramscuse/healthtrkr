@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Pencil, Trash2, X, Loader2 } from "lucide-react";
 import { getFoodDetail } from "../lib/api.js";
@@ -132,6 +132,7 @@ function fmt(v, suffix = "") {
 export default function Meals() {
   const today = getTodayString();
   const location = useLocation();
+  const navigate = useNavigate();
 
   // ── Page state ──
   const [date, setDate] = useState(today);
@@ -203,10 +204,13 @@ export default function Meals() {
   const error =
     notice ||
     (mealsQuery.error && mealsQuery.error.message) ||
+    (customFoodsQuery.error && customFoodsQuery.error.message) ||
+    (presetsQuery.error && presetsQuery.error.message) ||
+    (goalsQuery.error && goalsQuery.error.message) ||
     (deleteMealMutation.error && deleteMealMutation.error.message) ||
     "";
-  const customFoods = customFoodsQuery.data || [];
-  const presets = presetsQuery.data || [];
+  const customFoods = customFoodsQuery.error ? [] : (customFoodsQuery.data || []);
+  const presets = presetsQuery.error ? [] : (presetsQuery.data || []);
   const goals = goalsQuery.data;
 
   const searchResults = searchResultsQuery.data?.foods || [];
@@ -305,7 +309,8 @@ export default function Meals() {
     const openFor = location.state?.openFor;
     if (openFor && MEAL_TYPES.includes(openFor) && !loading) {
       openSlideOver(openFor);
-      window.history.replaceState({}, "");
+      const { openFor: _removed, ...restState } = location.state ?? {};
+      navigate(location.pathname, { replace: true, state: restState });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);

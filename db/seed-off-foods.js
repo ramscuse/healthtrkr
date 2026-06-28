@@ -71,6 +71,7 @@ await new Promise((resolve, reject) => {
   const rl = createInterface({ input: curl.stdout.pipe(gunzip), crlfDelay: Infinity });
   let linesRead = 0;
   let bytesIn = 0;
+  let intentionallyStopped = false;
 
   curl.stdout.on("data", (chunk) => {
     bytesIn += chunk.length;
@@ -126,19 +127,23 @@ await new Promise((resolve, reject) => {
     }
 
     if (added.length >= MAX_NEW) {
+      intentionallyStopped = true;
       rl.close();
       curl.kill(); // stop downloading once we have enough
     }
   });
 
-  rl.on("close", resolve);
   rl.on("error", reject);
-  // When we kill curl early the gunzip stream gets an abrupt EOF — that's expected
+  // When we kill curl early the gunzip stream gets an abrupt EOF — suppress only in that case.
+  // Z_BUF_ERROR (no pending output) is always harmless. Curl's exit code is the final authority.
   gunzip.on("error", (err) => {
-    if (added.length >= MAX_NEW || err.code === "Z_BUF_ERROR") resolve();
-    else reject(err);
+    if (!intentionallyStopped && err.code !== "Z_BUF_ERROR") reject(err);
   });
   curl.on("error", reject);
+  curl.on("close", (code, signal) => {
+    if (intentionallyStopped || code === 0) resolve();
+    else reject(new Error(`curl exited with code ${code}${signal ? ` (signal: ${signal})` : ""}`));
+  });
 });
 
 console.log(`\n\n  Done. Added ${added.length.toLocaleString()} new foods from Open Food Facts.`);

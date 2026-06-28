@@ -633,9 +633,10 @@ export default function Progress() {
                   // Color logic — semantic goal-status heatmap.
                   let bgColor = "bg-muted text-muted-foreground";
                   if (active) {
-                    const calOk = goals.calorieMax
-                      ? cal >= (goals.calorieMin || 0) && cal <= goals.calorieMax
-                      : cal > 0;
+                    const calOk =
+                      (goals.calorieMin == null || cal >= goals.calorieMin) &&
+                      (goals.calorieMax == null || cal <= goals.calorieMax) &&
+                      (goals.calorieMin != null || goals.calorieMax != null || cal > 0);
                     const watOk = goals.waterGoal ? wat >= goals.waterGoal : true;
                     if (calOk && watOk) bgColor = "bg-green-500/15 text-green-500";
                     else if (calOk || watOk) bgColor = "bg-amber-500/15 text-amber-500";
@@ -643,8 +644,9 @@ export default function Progress() {
                   }
 
                   return (
-                    <div
+                    <button
                       key={s.date}
+                      type="button"
                       onClick={() => handleSelectDay(s)}
                       className={cn(
                         bgColor,
@@ -655,7 +657,7 @@ export default function Progress() {
                     >
                       <span className="text-xs font-bold leading-none">{dayNum(s.date)}</span>
                       {workout && <span className="text-xs leading-none">💪</span>}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
