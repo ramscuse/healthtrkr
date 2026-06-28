@@ -1,15 +1,15 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
-import { login, register, forgotPassword, resetPassword } from '../lib/api.js'
-import { useUser } from '../context/UserContext.jsx'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { login, register, forgotPassword, resetPassword } from "../lib/api.js";
+import { useUser } from "../context/UserContext.jsx";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 function AuthShell({ children }) {
   return (
@@ -22,7 +22,7 @@ function AuthShell({ children }) {
         {children}
       </div>
     </div>
-  )
+  );
 }
 
 function ErrorAlert({ children }) {
@@ -30,84 +30,84 @@ function ErrorAlert({ children }) {
     <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
       <AlertDescription className="text-destructive">{children}</AlertDescription>
     </Alert>
-  )
+  );
 }
 
 // view: 'login' | 'register' | 'forgot' | 'reset'
 export default function Auth() {
-  const navigate = useNavigate()
-  const { refresh: refreshUser } = useUser()
-  const [view, setView] = useState('login')
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [code, setCode] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [rememberMe, setRememberMe] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const navigate = useNavigate();
+  const { refresh: refreshUser } = useUser();
+  const [view, setView] = useState("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   function switchTab(tab) {
-    setView(tab)
-    setError('')
-    setName('')
-    setEmail('')
-    setPassword('')
-    setCode('')
-    setNewPassword('')
+    setView(tab);
+    setError("");
+    setName("");
+    setEmail("");
+    setPassword("");
+    setCode("");
+    setNewPassword("");
   }
 
   async function handleSubmit(e) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+    e.preventDefault();
+    setError("");
+    setLoading(true);
     try {
-      if (view === 'login') {
-        await login(email, password, rememberMe)
+      if (view === "login") {
+        await login(email, password, rememberMe);
       } else {
-        await register(email, password, name)
+        await register(email, password, name);
       }
-      await refreshUser()
-      navigate('/')
+      await refreshUser();
+      navigate("/");
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again.')
+      setError(err.message || "Something went wrong. Please try again.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   async function handleForgot(e) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+    e.preventDefault();
+    setError("");
+    setLoading(true);
     try {
-      await forgotPassword(email)
-      toast.success('Check your email — a 6-digit code is on its way.')
-      setView('reset')
+      await forgotPassword(email);
+      toast.success("Check your email — a 6-digit code is on its way.");
+      setView("reset");
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again.')
+      setError(err.message || "Something went wrong. Please try again.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   async function handleReset(e) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+    e.preventDefault();
+    setError("");
+    setLoading(true);
     try {
-      await resetPassword(email, code.trim(), newPassword)
-      toast.success('Password reset! You can now log in.')
-      switchTab('login')
+      await resetPassword(email, code.trim(), newPassword);
+      toast.success("Password reset! You can now log in.");
+      switchTab("login");
     } catch (err) {
-      setError(err.message || 'Invalid or expired code.')
+      setError(err.message || "Invalid or expired code.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   // ── Forgot Password view ─────────────────────────────────────────────────
-  if (view === 'forgot') {
+  if (view === "forgot") {
     return (
       <AuthShell>
         <Card>
@@ -125,35 +125,38 @@ export default function Auth() {
                   type="email"
                   autoComplete="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
                   className="h-10"
                 />
               </div>
               <Button type="submit" disabled={loading} className="w-full h-10">
-                {loading ? 'Sending…' : 'Send Code'}
+                {loading ? "Sending…" : "Send Code"}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => switchTab('login')} className="w-full">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => switchTab("login")}
+                className="w-full"
+              >
                 Back to Log In
               </Button>
             </form>
           </CardContent>
         </Card>
       </AuthShell>
-    )
+    );
   }
 
   // ── Reset Password view ──────────────────────────────────────────────────
-  if (view === 'reset') {
+  if (view === "reset") {
     return (
       <AuthShell>
         <Card>
           <CardHeader>
             <CardTitle>Enter your reset code</CardTitle>
-            <CardDescription>
-              Check your email for a 6-digit code.
-            </CardDescription>
+            <CardDescription>Check your email for a 6-digit code.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleReset} className="space-y-4">
@@ -165,7 +168,7 @@ export default function Auth() {
                   type="email"
                   autoComplete="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
                   className="h-10"
@@ -178,7 +181,7 @@ export default function Auth() {
                   type="text"
                   inputMode="numeric"
                   value={code}
-                  onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   required
                   placeholder="123456"
                   className="h-10 text-center font-mono tracking-widest"
@@ -191,26 +194,29 @@ export default function Auth() {
                   type="password"
                   autoComplete="new-password"
                   value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
+                  onChange={(e) => setNewPassword(e.target.value)}
                   required
                   placeholder="Min 6 characters"
                   className="h-10"
                 />
               </div>
               <Button type="submit" disabled={loading || code.length !== 6} className="w-full h-10">
-                {loading ? 'Resetting…' : 'Reset Password'}
+                {loading ? "Resetting…" : "Reset Password"}
               </Button>
               <div className="flex justify-between text-sm">
                 <button
                   type="button"
-                  onClick={() => { setError(''); setView('forgot') }}
+                  onClick={() => {
+                    setError("");
+                    setView("forgot");
+                  }}
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Resend code
                 </button>
                 <button
                   type="button"
-                  onClick={() => switchTab('login')}
+                  onClick={() => switchTab("login")}
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Back to Log In
@@ -220,7 +226,7 @@ export default function Auth() {
           </CardContent>
         </Card>
       </AuthShell>
-    )
+    );
   }
 
   // ── Login / Register view ────────────────────────────────────────────────
@@ -230,15 +236,19 @@ export default function Auth() {
         <CardContent>
           <Tabs value={view} onValueChange={switchTab}>
             <TabsList className="w-full">
-              <TabsTrigger value="login" className="flex-1">Log In</TabsTrigger>
-              <TabsTrigger value="register" className="flex-1">Register</TabsTrigger>
+              <TabsTrigger value="login" className="flex-1">
+                Log In
+              </TabsTrigger>
+              <TabsTrigger value="register" className="flex-1">
+                Register
+              </TabsTrigger>
             </TabsList>
           </Tabs>
 
           <form onSubmit={handleSubmit} className="space-y-4 mt-4">
             {error && <ErrorAlert>{error}</ErrorAlert>}
 
-            {view === 'register' && (
+            {view === "register" && (
               <div className="space-y-1.5">
                 <Label htmlFor="name">Name</Label>
                 <Input
@@ -247,7 +257,7 @@ export default function Auth() {
                   type="text"
                   autoComplete="name"
                   value={name}
-                  onChange={e => setName(e.target.value)}
+                  onChange={(e) => setName(e.target.value)}
                   required
                   placeholder="Your name"
                   className="h-10"
@@ -263,7 +273,7 @@ export default function Auth() {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="you@example.com"
                 className="h-10"
@@ -273,10 +283,13 @@ export default function Auth() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                {view === 'login' && (
+                {view === "login" && (
                   <button
                     type="button"
-                    onClick={() => { setError(''); setView('forgot') }}
+                    onClick={() => {
+                      setError("");
+                      setView("forgot");
+                    }}
                     className="text-xs text-primary hover:underline"
                   >
                     Forgot password?
@@ -287,38 +300,37 @@ export default function Auth() {
                 id="password"
                 name="password"
                 type="password"
-                autoComplete={view === 'login' ? 'current-password' : 'new-password'}
+                autoComplete={view === "login" ? "current-password" : "new-password"}
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="Min 6 characters"
                 className="h-10"
               />
             </div>
 
-            {view === 'login' && (
+            {view === "login" && (
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="remember"
                   checked={rememberMe}
-                  onCheckedChange={checked => setRememberMe(checked === true)}
+                  onCheckedChange={(checked) => setRememberMe(checked === true)}
                 />
-                <Label htmlFor="remember" className="text-muted-foreground font-normal cursor-pointer">
+                <Label
+                  htmlFor="remember"
+                  className="text-muted-foreground font-normal cursor-pointer"
+                >
                   Remember me
                 </Label>
               </div>
             )}
 
             <Button type="submit" disabled={loading} className="w-full h-10">
-              {loading
-                ? 'Please wait...'
-                : view === 'login'
-                ? 'Log In'
-                : 'Create Account'}
+              {loading ? "Please wait..." : view === "login" ? "Log In" : "Create Account"}
             </Button>
           </form>
         </CardContent>
       </Card>
     </AuthShell>
-  )
+  );
 }

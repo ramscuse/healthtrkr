@@ -1,44 +1,51 @@
-import { NavLink, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { Home, Utensils, Dumbbell, Droplet, BarChart3, User, Shield, LogOut } from 'lucide-react'
-import { logout } from '../lib/api.js'
-import { useUser } from '../context/UserContext.jsx'
-import { cn } from '@/lib/utils'
+import { NavLink, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { Home, Utensils, Dumbbell, Droplet, BarChart3, User, Shield, LogOut } from "lucide-react";
+import { logout } from "../lib/api.js";
+import { useUser } from "../context/UserContext.jsx";
+import { cn } from "@/lib/utils";
 
 const baseNavItems = [
-  { to: '/',          label: 'Dashboard', mobileLabel: 'Home',     Icon: Home },
-  { to: '/meals',     label: 'Meals',     mobileLabel: 'Meals',    Icon: Utensils },
-  { to: '/workouts',  label: 'Workouts',  mobileLabel: 'Workouts', Icon: Dumbbell },
-  { to: '/water',     label: 'Water',     mobileLabel: 'Water',    Icon: Droplet },
-  { to: '/progress',  label: 'Progress',  mobileLabel: 'Progress', Icon: BarChart3 },
-]
+  { to: "/", label: "Dashboard", mobileLabel: "Home", Icon: Home },
+  { to: "/meals", label: "Meals", mobileLabel: "Meals", Icon: Utensils },
+  { to: "/workouts", label: "Workouts", mobileLabel: "Workouts", Icon: Dumbbell },
+  { to: "/water", label: "Water", mobileLabel: "Water", Icon: Droplet },
+  { to: "/progress", label: "Progress", mobileLabel: "Progress", Icon: BarChart3 },
+];
 
-const adminNavItem = { to: '/admin', label: 'Admin', mobileLabel: 'Admin', Icon: Shield }
+const adminNavItem = { to: "/admin", label: "Admin", mobileLabel: "Admin", Icon: Shield };
 
 // Active = solid violet pill; inactive = muted sidebar foreground with a subtle hover.
 const navItemClass = ({ isActive }) =>
   cn(
-    'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+    "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors",
     isActive
-      ? 'bg-primary text-primary-foreground'
-      : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
-  )
+      ? "bg-primary text-primary-foreground"
+      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+  );
 
 export default function Layout({ children }) {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const { user } = useUser()
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useUser();
 
-  const isAdmin = user?.role === 'admin'
-  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems
-  const mobileNavItems = [...navItems, { to: '/account', label: 'Account', mobileLabel: 'Account', Icon: User }]
+  const isAdmin = user?.role === "admin";
+  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
+  const mobileNavItems = [
+    ...navItems,
+    { to: "/account", label: "Account", mobileLabel: "Account", Icon: User },
+  ];
 
   async function handleLogout() {
-    try { await logout() } catch { /* ignore */ }
+    try {
+      await logout();
+    } catch {
+      /* ignore */
+    }
     // Drop the previous session's cached data so a same-tab login doesn't
     // briefly show stale account/meals/water/progress for the prior user.
-    queryClient.clear()
-    navigate('/login')
+    queryClient.clear();
+    navigate("/login");
   }
 
   return (
@@ -51,7 +58,7 @@ export default function Layout({ children }) {
 
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navItems.map(({ to, label, Icon }) => (
-            <NavLink key={to} to={to} end={to === '/'} className={navItemClass}>
+            <NavLink key={to} to={to} end={to === "/"} className={navItemClass}>
               <Icon className="size-4 shrink-0" />
               {label}
             </NavLink>
@@ -75,9 +82,7 @@ export default function Layout({ children }) {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto bg-background pt-[env(safe-area-inset-top)]">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-8">
-          {children}
-        </div>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-8">{children}</div>
       </main>
 
       {/* Bottom tab bar — mobile only */}
@@ -86,11 +91,11 @@ export default function Layout({ children }) {
           <NavLink
             key={to}
             to={to}
-            end={to === '/'}
+            end={to === "/"}
             className={({ isActive }) =>
               cn(
-                'flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors',
-                isActive ? 'text-primary' : 'text-muted-foreground'
+                "flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors",
+                isActive ? "text-primary" : "text-muted-foreground"
               )
             }
           >
@@ -100,5 +105,5 @@ export default function Layout({ children }) {
         ))}
       </nav>
     </div>
-  )
+  );
 }

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getWorkouts,
   getWorkoutHistory,
@@ -11,8 +11,8 @@ import {
   createWorkoutPreset,
   updateWorkoutPreset,
   deleteWorkoutPreset,
-} from '../lib/api.js'
-import { queryKeys } from './queryKeys.js'
+} from "../lib/api.js";
+import { queryKeys } from "./queryKeys.js";
 
 // Reads
 
@@ -22,7 +22,7 @@ export function useWorkouts(date, options = {}) {
     queryFn: () => getWorkouts(date),
     ...options,
     enabled: !!date && (options.enabled ?? true),
-  })
+  });
 }
 
 export function useWorkoutHistory(limit = 5, options = {}) {
@@ -30,7 +30,7 @@ export function useWorkoutHistory(limit = 5, options = {}) {
     queryKey: queryKeys.workouts.history(limit),
     queryFn: () => getWorkoutHistory(limit),
     ...options,
-  })
+  });
 }
 
 // Static config endpoint (public) — fetch once and keep. Lives outside the
@@ -41,7 +41,7 @@ export function useWorkoutTemplate(options = {}) {
     queryFn: getWorkoutTemplate,
     staleTime: Infinity,
     ...options,
-  })
+  });
 }
 
 export function useCustomExercises(options = {}) {
@@ -49,7 +49,7 @@ export function useCustomExercises(options = {}) {
     queryKey: queryKeys.workouts.customExercises,
     queryFn: getCustomExercises,
     ...options,
-  })
+  });
 }
 
 export function useWorkoutPresets(options = {}) {
@@ -57,68 +57,68 @@ export function useWorkoutPresets(options = {}) {
     queryKey: queryKeys.workouts.presets,
     queryFn: getWorkoutPresets,
     ...options,
-  })
+  });
 }
 
 // Mutations
 
 export function useLogWorkout() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => logWorkout(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.diary })
-      queryClient.invalidateQueries({ queryKey: queryKeys.progress.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.diary });
+      queryClient.invalidateQueries({ queryKey: queryKeys.progress.all });
     },
-  })
+  });
 }
 
 export function useCreateCustomExercise() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => createCustomExercise(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.customExercises })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.customExercises });
     },
-  })
+  });
 }
 
 export function useDeleteCustomExercise() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id) => deleteCustomExercise(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.customExercises })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.customExercises });
     },
-  })
+  });
 }
 
 export function useCreateWorkoutPreset() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => createWorkoutPreset(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.presets })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.presets });
     },
-  })
+  });
 }
 
 export function useUpdateWorkoutPreset() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }) => updateWorkoutPreset(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.presets })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.presets });
     },
-  })
+  });
 }
 
 export function useDeleteWorkoutPreset() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id) => deleteWorkoutPreset(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.presets })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workouts.presets });
     },
-  })
+  });
 }

@@ -1,4 +1,4 @@
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 // Keyed on the authenticated userId when available, falling back to IP. This
 // stops one user behind a NAT from being throttled by a noisy neighbour while
@@ -18,7 +18,7 @@ export const authLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
+  message: { error: "Too many requests, please try again later." },
 });
 
 // General authenticated API limiter.
@@ -28,7 +28,7 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: userOrIp,
-  message: { error: 'Too many requests, please try again later.' },
+  message: { error: "Too many requests, please try again later." },
 });
 
 // Stricter cap on the password-change endpoint specifically. The auth router
@@ -41,5 +41,5 @@ export const passwordChangeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: userOrIp,
-  message: { error: 'Too many password change attempts. Try again later.' },
+  message: { error: "Too many password change attempts. Try again later." },
 });

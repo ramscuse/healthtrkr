@@ -1,5 +1,5 @@
-import { Router } from 'express';
-import prisma from '../../lib/prisma.js';
+import { Router } from "express";
+import prisma from "../../lib/prisma.js";
 
 const router = Router();
 
@@ -28,9 +28,9 @@ async function buildDaySummary(userId, dateStr) {
   const consumed = meals.reduce(
     (acc, m) => ({
       calories: acc.calories + (m.caloriesSnapshot ?? 0),
-      protein:  acc.protein  + (m.proteinSnapshot  ?? 0),
-      carbs:    acc.carbs    + (m.carbsSnapshot    ?? 0),
-      fat:      acc.fat      + (m.fatSnapshot      ?? 0),
+      protein: acc.protein + (m.proteinSnapshot ?? 0),
+      carbs: acc.carbs + (m.carbsSnapshot ?? 0),
+      fat: acc.fat + (m.fatSnapshot ?? 0),
     }),
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   );
@@ -47,15 +47,17 @@ async function buildDaySummary(userId, dateStr) {
 
   return {
     date: dateStr,
-    goals: goals ? {
-      calorieMin: goals.calorieMin,
-      calorieMax: goals.calorieMax,
-      proteinMin: goals.proteinMin,
-      proteinMax: goals.proteinMax,
-      carbsGoal: goals.carbsGoal,
-      fatGoal: goals.fatGoal,
-      waterGoal: goals.waterGoal,
-    } : null,
+    goals: goals
+      ? {
+          calorieMin: goals.calorieMin,
+          calorieMax: goals.calorieMax,
+          proteinMin: goals.proteinMin,
+          proteinMax: goals.proteinMax,
+          carbsGoal: goals.carbsGoal,
+          fatGoal: goals.fatGoal,
+          waterGoal: goals.waterGoal,
+        }
+      : null,
     consumed,
     burned,
     water,
@@ -66,12 +68,12 @@ async function buildDaySummary(userId, dateStr) {
 }
 
 // GET /api/progress/summary?date=YYYY-MM-DD
-router.get('/summary', async (req, res, next) => {
+router.get("/summary", async (req, res, next) => {
   try {
     const { userId } = req.user;
     const raw = req.query.date || new Date().toISOString().slice(0, 10);
     const date = parseDate(raw);
-    if (!date) return res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
+    if (!date) return res.status(400).json({ error: "date must be in YYYY-MM-DD format" });
     const summary = await buildDaySummary(userId, date);
     res.json(summary);
   } catch (err) {
@@ -80,12 +82,13 @@ router.get('/summary', async (req, res, next) => {
 });
 
 // GET /api/progress/weekly?startDate=YYYY-MM-DD
-router.get('/weekly', async (req, res, next) => {
+router.get("/weekly", async (req, res, next) => {
   try {
     const { userId } = req.user;
     const raw = req.query.startDate || new Date().toISOString().slice(0, 10);
     const startDate = parseDate(raw);
-    if (!startDate) return res.status(400).json({ error: 'startDate must be in YYYY-MM-DD format' });
+    if (!startDate)
+      return res.status(400).json({ error: "startDate must be in YYYY-MM-DD format" });
     const start = new Date(startDate);
 
     const days = [];
@@ -103,12 +106,13 @@ router.get('/weekly', async (req, res, next) => {
 });
 
 // GET /api/progress/range?startDate=YYYY-MM-DD&numDays=N
-router.get('/range', async (req, res, next) => {
+router.get("/range", async (req, res, next) => {
   try {
     const { userId } = req.user;
     const raw = req.query.startDate || new Date().toISOString().slice(0, 10);
     const startDate = parseDate(raw);
-    if (!startDate) return res.status(400).json({ error: 'startDate must be in YYYY-MM-DD format' });
+    if (!startDate)
+      return res.status(400).json({ error: "startDate must be in YYYY-MM-DD format" });
     const numDays = Math.min(parseInt(req.query.numDays) || 7, 31);
     const start = new Date(startDate);
 
@@ -119,7 +123,7 @@ router.get('/range', async (req, res, next) => {
       days.push(d.toISOString().slice(0, 10));
     }
 
-    const summaries = await Promise.all(days.map(d => buildDaySummary(userId, d)));
+    const summaries = await Promise.all(days.map((d) => buildDaySummary(userId, d)));
     res.json(summaries);
   } catch (err) {
     next(err);

@@ -1,12 +1,12 @@
-import crypto from 'crypto';
+import crypto from "crypto";
 
-const API_URL = 'https://platform.fatsecret.com/rest/server.api';
+const API_URL = "https://platform.fatsecret.com/rest/server.api";
 const FETCH_TIMEOUT_MS = 10_000;
 
 class FatSecretError extends Error {
   constructor(code, message) {
     super(message);
-    this.name = 'FatSecretError';
+    this.name = "FatSecretError";
     this.code = code;
   }
 }
@@ -15,7 +15,7 @@ class FatSecretError extends Error {
 function pctEncode(s) {
   return encodeURIComponent(String(s)).replace(
     /[!'()*]/g,
-    c => '%' + c.charCodeAt(0).toString(16).toUpperCase()
+    (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase()
   );
 }
 
@@ -24,11 +24,11 @@ function pctEncode(s) {
 function signRequest(httpMethod, url, params, consumerSecret) {
   const paramString = Object.keys(params)
     .sort()
-    .map(k => `${pctEncode(k)}=${pctEncode(params[k])}`)
-    .join('&');
+    .map((k) => `${pctEncode(k)}=${pctEncode(params[k])}`)
+    .join("&");
   const baseString = `${httpMethod.toUpperCase()}&${pctEncode(url)}&${pctEncode(paramString)}`;
   const signingKey = `${pctEncode(consumerSecret)}&`;
-  return crypto.createHmac('sha1', signingKey).update(baseString).digest('base64');
+  return crypto.createHmac("sha1", signingKey).update(baseString).digest("base64");
 }
 
 // We sign with OAuth 1.0a because FatSecret's OAuth 2.0 endpoint requires
@@ -37,29 +37,30 @@ function signRequest(httpMethod, url, params, consumerSecret) {
 // secret) and 2.0 (client id + client secret) — these env vars hold the 1.0 set.
 async function apiFetch(method, params) {
   const { FATSECRET_CONSUMER_KEY: key, FATSECRET_CONSUMER_SECRET: secret } = process.env;
-  if (!key || !secret) throw new Error('FATSECRET_CONSUMER_KEY / FATSECRET_CONSUMER_SECRET not set');
+  if (!key || !secret)
+    throw new Error("FATSECRET_CONSUMER_KEY / FATSECRET_CONSUMER_SECRET not set");
 
   const allParams = {
     method,
-    format: 'json',
+    format: "json",
     ...params,
     oauth_consumer_key: key,
-    oauth_signature_method: 'HMAC-SHA1',
+    oauth_signature_method: "HMAC-SHA1",
     oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-    oauth_nonce: crypto.randomBytes(16).toString('hex'),
-    oauth_version: '1.0',
+    oauth_nonce: crypto.randomBytes(16).toString("hex"),
+    oauth_version: "1.0",
   };
   for (const k of Object.keys(allParams)) allParams[k] = String(allParams[k]);
 
-  allParams.oauth_signature = signRequest('POST', API_URL, allParams, secret);
+  allParams.oauth_signature = signRequest("POST", API_URL, allParams, secret);
 
   const body = Object.entries(allParams)
     .map(([k, v]) => `${pctEncode(k)}=${pctEncode(v)}`)
-    .join('&');
+    .join("&");
 
   const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
@@ -72,7 +73,7 @@ async function apiFetch(method, params) {
 }
 
 function num(v) {
-  if (v === null || v === undefined || v === '') return null;
+  if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
@@ -91,12 +92,12 @@ function asArray(v) {
 function normalizeServing(s) {
   return {
     servingId: Number(s.serving_id),
-    description: s.serving_description || '',
+    description: s.serving_description || "",
     metricAmount: num(s.metric_serving_amount),
     metricUnit: s.metric_serving_unit || null,
     measurementDescription: s.measurement_description || null,
     numberOfUnits: num(s.number_of_units),
-    isDefault: s.is_default === '1' || s.is_default === 1,
+    isDefault: s.is_default === "1" || s.is_default === 1,
     calories: requiredNum(s.calories),
     protein: requiredNum(s.protein),
     carbs: requiredNum(s.carbohydrate),
@@ -113,9 +114,9 @@ function normalizeFood(food) {
   const servings = asArray(food?.servings?.serving).map(normalizeServing);
   return {
     foodId: Number(food.food_id),
-    foodName: food.food_name || '',
+    foodName: food.food_name || "",
     brandName: food.brand_name || null,
-    foodType: food.food_type || 'Generic',
+    foodType: food.food_type || "Generic",
     foodUrl: food.food_url || null,
     servings,
   };
@@ -123,7 +124,8 @@ function normalizeFood(food) {
 
 // Parse the free-tier `food_description` string for a default-serving preview.
 // Format: "Per 1 cup - Calories: 150kcal | Fat: 3.00g | Carbs: 25.00g | Protein: 5.00g"
-const DESC_RE = /Per (.+?) - Calories: ([\d.]+)kcal \| Fat: ([\d.]+)g \| Carbs: ([\d.]+)g \| Protein: ([\d.]+)g/;
+const DESC_RE =
+  /Per (.+?) - Calories: ([\d.]+)kcal \| Fat: ([\d.]+)g \| Carbs: ([\d.]+)g \| Protein: ([\d.]+)g/;
 function parseDefaultPreview(description) {
   const m = description?.match(DESC_RE);
   if (!m) return null;
@@ -143,25 +145,27 @@ function parseDefaultPreview(description) {
 function normalizeSearchHit(food) {
   return {
     foodId: Number(food.food_id),
-    foodName: food.food_name || '',
+    foodName: food.food_name || "",
     brandName: food.brand_name || null,
-    foodType: food.food_type || 'Generic',
+    foodType: food.food_type || "Generic",
     foodUrl: food.food_url || null,
     defaultPreview: parseDefaultPreview(food.food_description),
   };
 }
 
 export async function searchFoods(query, limit = 10) {
-  const data = await apiFetch('foods.search', {
+  const data = await apiFetch("foods.search", {
     search_expression: query,
-    max_results:       limit,
+    max_results: limit,
   });
   const raw = data?.foods?.food;
-  return asArray(raw).map(normalizeSearchHit).filter(f => f.foodId);
+  return asArray(raw)
+    .map(normalizeSearchHit)
+    .filter((f) => f.foodId);
 }
 
 export async function fetchFoodById(foodId) {
-  const data = await apiFetch('food.get', { food_id: foodId });
+  const data = await apiFetch("food.get", { food_id: foodId });
   if (!data?.food) return null;
   return normalizeFood(data.food);
 }
@@ -178,7 +182,7 @@ export async function materializeFood(prisma, fsFood) {
     const food = await tx.food.upsert({
       where: { fatSecretFoodId: fsFood.foodId },
       create: {
-        source: 'fatsecret',
+        source: "fatsecret",
         fatSecretFoodId: fsFood.foodId,
         name: fsFood.foodName,
         brandName: fsFood.brandName,

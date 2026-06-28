@@ -3,21 +3,21 @@
  * Run once: node db/seed-foods.js
  * Requires USDA_API_KEY in .env
  */
-import 'dotenv/config';
-import { writeFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import "dotenv/config";
+import { writeFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT_FILE = join(__dirname, '..', 'data', 'foods.json');
-const API_KEY = process.env.USDA_API_KEY || 'DEMO_KEY';
-const BASE = 'https://api.nal.usda.gov/fdc/v1';
+const OUT_FILE = join(__dirname, "..", "data", "foods.json");
+const API_KEY = process.env.USDA_API_KEY || "DEMO_KEY";
+const BASE = "https://api.nal.usda.gov/fdc/v1";
 
 // Nutrient numbers used by the /foods/list endpoint (legacy nutrient numbers)
-const NID = { calories: '208', protein: '203', carbs: '205', fat: '204' };
+const NID = { calories: "208", protein: "203", carbs: "205", fat: "204" };
 
 function getNutrient(nutrients, number) {
-  return nutrients.find(n => n.number === number)?.amount ?? 0;
+  return nutrients.find((n) => n.number === number)?.amount ?? 0;
 }
 
 async function fetchPage(dataType, pageNumber, pageSize = 200) {
@@ -46,8 +46,8 @@ async function fetchAllForType(dataType) {
       if (!food.description || !(cal > 0)) continue;
 
       const protein = Math.round(getNutrient(food.foodNutrients, NID.protein) * 10) / 10;
-      const carbs   = Math.round(getNutrient(food.foodNutrients, NID.carbs)   * 10) / 10;
-      const fat     = Math.round(getNutrient(food.foodNutrients, NID.fat)     * 10) / 10;
+      const carbs = Math.round(getNutrient(food.foodNutrients, NID.carbs) * 10) / 10;
+      const fat = Math.round(getNutrient(food.foodNutrients, NID.fat) * 10) / 10;
 
       // Reject physically impossible entries: macros can't exceed 100g per 100g of food,
       // and calories can't exceed ~900 kcal/100g (theoretical max for pure fat/oil).
@@ -67,19 +67,19 @@ async function fetchAllForType(dataType) {
     page++;
 
     // Small delay to be polite to the API
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 150));
   }
 
   console.log(` ${foods.length} foods`);
   return foods;
 }
 
-console.log('Downloading USDA FoodData Central...');
+console.log("Downloading USDA FoodData Central...");
 
 const [srLegacy, foundation, survey] = await Promise.all([
-  fetchAllForType('SR Legacy'),
-  fetchAllForType('Foundation'),
-  fetchAllForType('Survey (FNDDS)'),
+  fetchAllForType("SR Legacy"),
+  fetchAllForType("Foundation"),
+  fetchAllForType("Survey (FNDDS)"),
 ]);
 
 // Merge and deduplicate by lowercased name
@@ -97,4 +97,6 @@ for (const food of [...foundation, ...srLegacy, ...survey]) {
 all.sort((a, b) => a.name.localeCompare(b.name));
 
 writeFileSync(OUT_FILE, JSON.stringify(all));
-console.log(`\nSaved ${all.length} foods to data/foods.json (${(JSON.stringify(all).length / 1024).toFixed(0)} KB)`);
+console.log(
+  `\nSaved ${all.length} foods to data/foods.json (${(JSON.stringify(all).length / 1024).toFixed(0)} KB)`
+);
