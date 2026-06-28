@@ -190,12 +190,7 @@ async function fetchBarcodeFood(barcode) {
   const rawCarbs = p.nutriments?.carbohydrates_100g;
   const rawFat = p.nutriments?.fat_100g;
 
-  if (
-    rawCalories == null ||
-    rawProtein == null ||
-    rawCarbs == null ||
-    rawFat == null
-  ) {
+  if (rawCalories == null || rawProtein == null || rawCarbs == null || rawFat == null) {
     return { error: "Product nutrition data is unavailable", statusCode: 404 };
   }
 
