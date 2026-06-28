@@ -124,7 +124,10 @@ model Food {
   // Postgres treats NULL userIds as distinct, so multiple source='fatsecret'
   // rows (userId=null) can share a name. FS rows dedupe via fatSecretFoodId.
   // Custom rows (userId set) enforce per-user name uniqueness.
+  // Barcode rows dedupe by (source='barcode', foodUrl=barcode_string).
+  // Postgres treats NULL foodUrl as distinct, so null-foodUrl rows are unaffected.
   @@unique([userId, name])
+  @@unique([source, foodUrl])
   @@index([source])
   @@index([userId])
 }

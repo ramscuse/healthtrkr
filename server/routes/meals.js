@@ -185,10 +185,24 @@ async function fetchBarcodeFood(barcode) {
   if (data.status !== 1) return { error: "Product not found", statusCode: 404 };
 
   const p = data.product;
-  const calories = Number(p.nutriments?.["energy-kcal_100g"] ?? 0);
-  const protein = Number(p.nutriments?.proteins_100g ?? 0);
-  const carbs = Number(p.nutriments?.carbohydrates_100g ?? 0);
-  const fat = Number(p.nutriments?.fat_100g ?? 0);
+  const rawCalories = p.nutriments?.["energy-kcal_100g"];
+  const rawProtein = p.nutriments?.proteins_100g;
+  const rawCarbs = p.nutriments?.carbohydrates_100g;
+  const rawFat = p.nutriments?.fat_100g;
+
+  if (
+    rawCalories == null ||
+    rawProtein == null ||
+    rawCarbs == null ||
+    rawFat == null
+  ) {
+    return { error: "Product nutrition data is unavailable", statusCode: 404 };
+  }
+
+  const calories = Number(rawCalories);
+  const protein = Number(rawProtein);
+  const carbs = Number(rawCarbs);
+  const fat = Number(rawFat);
 
   if (
     !isFinite(calories) ||
@@ -365,44 +379,44 @@ router.post("/", async (req, res, next) => {
 
       const { name, brandName, calories, protein, carbs, fat } = result.food;
 
-      // Upsert the barcode food row (deduped by foodUrl = barcode).
-      let barcodeFood = await prisma.food.findFirst({
-        where: { source: "barcode", foodUrl: food.barcode },
-      });
-      if (!barcodeFood) {
-        barcodeFood = await prisma.food.create({
-          data: {
+      // Atomically upsert the barcode food and its single 100 g serving.
+      // Wrapping in a transaction means the upsert's ON CONFLICT row-lock is
+      // held until commit, so a concurrent scan that races past the food upsert
+      // blocks before the serving findFirst, preventing duplicate 100 g rows.
+      [resolvedFood, resolvedServing] = await prisma.$transaction(async (tx) => {
+        const barcodeFood = await tx.food.upsert({
+          where: { source_foodUrl: { source: "barcode", foodUrl: food.barcode } },
+          create: {
             source: "barcode",
             name,
             brandName,
             foodType: "Brand",
             foodUrl: food.barcode,
           },
+          update: {},
         });
-      }
 
-      // Upsert the single 100g serving for this barcode food.
-      let barcodeServing = await prisma.foodServing.findFirst({
-        where: { foodId: barcodeFood.id },
+        let barcodeServing = await tx.foodServing.findFirst({
+          where: { foodId: barcodeFood.id },
+        });
+        if (!barcodeServing) {
+          barcodeServing = await tx.foodServing.create({
+            data: {
+              foodId: barcodeFood.id,
+              description: "100 g",
+              metricAmount: 100,
+              metricUnit: "g",
+              isDefault: true,
+              calories,
+              protein,
+              carbs,
+              fat,
+            },
+          });
+        }
+
+        return [barcodeFood, barcodeServing];
       });
-      if (!barcodeServing) {
-        barcodeServing = await prisma.foodServing.create({
-          data: {
-            foodId: barcodeFood.id,
-            description: "100 g",
-            metricAmount: 100,
-            metricUnit: "g",
-            isDefault: true,
-            calories,
-            protein,
-            carbs,
-            fat,
-          },
-        });
-      }
-
-      resolvedFood = barcodeFood;
-      resolvedServing = barcodeServing;
     } else {
       return res
         .status(400)
