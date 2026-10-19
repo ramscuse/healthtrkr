@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -21,6 +21,13 @@ const GOAL_FIELDS = [
   { key: "waterGoal", label: "Water Goal", unit: "oz" },
 ];
 
+const PASSWORD_FIELDS = [
+  { key: "current", label: "Current Password", autoComplete: "current-password" },
+  { key: "next", label: "New Password", autoComplete: "new-password" },
+  { key: "confirm", label: "Confirm New Password", autoComplete: "new-password" },
+];
+const EMPTY_PASSWORDS = { current: "", next: "", confirm: "" };
+
 export default function Account() {
   const { darkMode, toggleDarkMode } = useDarkMode();
   const navigate = useNavigate();
@@ -33,38 +40,24 @@ export default function Account() {
   const profile = accountQuery.data;
   const goals = goalsQuery.data;
 
-  // Goals form state — local because it's edit-buffer, not server state.
+  // Edit buffer, seeded from the cached goals each time editing starts.
   const [goalsEditing, setGoalsEditing] = useState(false);
   const [goalsForm, setGoalsForm] = useState({});
-  const [goalsClientError, setGoalsClientError] = useState("");
 
-  // Sync the form buffer to the loaded goals (once they arrive, and again
-  // if the cached goals change from elsewhere). Skip while editing so a
-  // background refetch can't clobber unsaved input.
-  useEffect(() => {
-    if (!goals || goalsEditing) return;
-    setGoalsForm({
-      calorieMin: goals.calorieMin ?? "",
-      calorieMax: goals.calorieMax ?? "",
-      proteinMin: goals.proteinMin ?? "",
-      proteinMax: goals.proteinMax ?? "",
-      waterGoal: goals.waterGoal ?? "",
-    });
-  }, [goals, goalsEditing]);
-
-  // Password state — direct call (one-shot, not cached).
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
+  // Password: direct call (one-shot, not cached).
+  const [pwd, setPwd] = useState(EMPTY_PASSWORDS);
   const [pwdSaving, setPwdSaving] = useState(false);
   const [pwdError, setPwdError] = useState("");
 
   const goalsSaving = updateGoalsMutation.isPending;
-  const goalsError =
-    goalsClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || "";
+  const goalsError = updateGoalsMutation.error?.message;
+
+  function startGoalsEdit() {
+    setGoalsForm(Object.fromEntries(GOAL_FIELDS.map(({ key }) => [key, goals?.[key] ?? ""])));
+    setGoalsEditing(true);
+  }
 
   function handleSaveGoals() {
-    setGoalsClientError("");
     const payload = {};
     for (const [key, val] of Object.entries(goalsForm)) {
       const n = Number(val);
@@ -78,38 +71,24 @@ export default function Account() {
     });
   }
 
-  function cancelGoalsEdit() {
-    setGoalsEditing(false);
-    setGoalsClientError("");
-    setGoalsForm({
-      calorieMin: goals?.calorieMin ?? "",
-      calorieMax: goals?.calorieMax ?? "",
-      proteinMin: goals?.proteinMin ?? "",
-      proteinMax: goals?.proteinMax ?? "",
-      waterGoal: goals?.waterGoal ?? "",
-    });
-  }
-
   async function handleSubmit(e) {
     e.preventDefault();
     setPwdError("");
 
-    if (next !== confirm) {
+    if (pwd.next !== pwd.confirm) {
       setPwdError("New passwords do not match.");
       return;
     }
-    if (next.length < 6) {
+    if (pwd.next.length < 6) {
       setPwdError("New password must be at least 6 characters.");
       return;
     }
 
     setPwdSaving(true);
     try {
-      await changePassword(current, next);
+      await changePassword(pwd.current, pwd.next);
       toast.success("Password updated successfully");
-      setCurrent("");
-      setNext("");
-      setConfirm("");
+      setPwd(EMPTY_PASSWORDS);
     } catch (err) {
       setPwdError(err.message || "Failed to update password.");
     } finally {
@@ -158,15 +137,7 @@ export default function Account() {
           <CardTitle>Goals</CardTitle>
           <CardAction>
             {!goalsEditing ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setGoalsEditing(true);
-                  setGoalsClientError("");
-                }}
-              >
+              <Button type="button" variant="outline" size="sm" onClick={startGoalsEdit}>
                 Edit
               </Button>
             ) : (
@@ -174,7 +145,12 @@ export default function Account() {
                 <Button type="button" size="sm" onClick={handleSaveGoals} disabled={goalsSaving}>
                   {goalsSaving ? "Saving…" : "Save"}
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={cancelGoalsEdit}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGoalsEditing(false)}
+                >
                   Cancel
                 </Button>
               </div>
@@ -207,25 +183,10 @@ export default function Account() {
             </div>
           ) : goals ? (
             <div className="space-y-2">
+              {/* calorie/protein min+max are non-null in the schema; only water is optional */}
               {[
-                {
-                  label: "Calories",
-                  value:
-                    goals.calorieMin != null && goals.calorieMax != null
-                      ? `${goals.calorieMin}–${goals.calorieMax} kcal`
-                      : goals.calorieMax
-                        ? `${goals.calorieMax} kcal max`
-                        : null,
-                },
-                {
-                  label: "Protein",
-                  value:
-                    goals.proteinMin != null && goals.proteinMax != null
-                      ? `${goals.proteinMin}–${goals.proteinMax} g`
-                      : goals.proteinMax
-                        ? `${goals.proteinMax} g max`
-                        : null,
-                },
+                { label: "Calories", value: `${goals.calorieMin}–${goals.calorieMax} kcal` },
+                { label: "Protein", value: `${goals.proteinMin}–${goals.proteinMax} g` },
                 { label: "Water", value: goals.waterGoal ? `${goals.waterGoal} oz / day` : null },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center gap-3">
@@ -256,7 +217,7 @@ export default function Account() {
           </div>
           <Switch
             checked={darkMode}
-            onCheckedChange={() => toggleDarkMode()}
+            onCheckedChange={toggleDarkMode}
             aria-label="Toggle dark mode"
           />
         </CardContent>
@@ -275,41 +236,19 @@ export default function Account() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="current-password">Current Password</Label>
-              <Input
-                id="current-password"
-                type="password"
-                value={current}
-                onChange={(e) => setCurrent(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="next-password">New Password</Label>
-              <Input
-                id="next-password"
-                type="password"
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-                required
-                autoComplete="new-password"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">Confirm New Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-                autoComplete="new-password"
-              />
-            </div>
+            {PASSWORD_FIELDS.map(({ key, label, autoComplete }) => (
+              <div key={key} className="space-y-1.5">
+                <Label htmlFor={`${key}-password`}>{label}</Label>
+                <Input
+                  id={`${key}-password`}
+                  type="password"
+                  value={pwd[key]}
+                  onChange={(e) => setPwd((p) => ({ ...p, [key]: e.target.value }))}
+                  required
+                  autoComplete={autoComplete}
+                />
+              </div>
+            ))}
 
             <Button type="submit" disabled={pwdSaving} className="w-full">
               {pwdSaving ? "Updating..." : "Update Password"}

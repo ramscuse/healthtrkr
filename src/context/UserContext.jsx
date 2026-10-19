@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { getAccount, isLoggedIn } from "../lib/api.js";
 
 const UserContext = createContext({ user: null, loading: true, refresh: async () => {} });
@@ -7,25 +7,24 @@ export function UserProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
+  async function refresh() {
     if (!isLoggedIn()) {
       setUser(null);
       setLoading(false);
       return;
     }
     try {
-      const u = await getAccount();
-      setUser(u || null);
+      setUser((await getAccount()) || null);
     } catch {
       setUser(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, []);
 
   return <UserContext.Provider value={{ user, loading, refresh }}>{children}</UserContext.Provider>;
 }

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
+import { validatePassword, SALT_ROUNDS } from "../server/lib/passwordPolicy.js";
 
 const [email, newPassword] = process.argv.slice(2);
 
@@ -9,8 +10,9 @@ if (!email || !newPassword) {
   process.exit(1);
 }
 
-if (newPassword.length < 6) {
-  console.error("Password must be at least 6 characters.");
+const passwordError = validatePassword(newPassword);
+if (passwordError) {
+  console.error(passwordError);
   process.exit(1);
 }
 
@@ -20,8 +22,19 @@ if (!user) {
   process.exit(1);
 }
 
-const hashed = await bcrypt.hash(newPassword, 12);
-await prisma.user.update({ where: { email }, data: { password: hashed } });
+const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
+// Bump tokenVersion (kills existing sessions) and burn outstanding reset codes,
+// same as the admin set-password route.
+await prisma.$transaction([
+  prisma.user.update({
+    where: { id: user.id },
+    data: { password: hashed, tokenVersion: { increment: 1 } },
+  }),
+  prisma.passwordResetToken.updateMany({
+    where: { userId: user.id, used: false },
+    data: { used: true },
+  }),
+]);
 
 console.log(`Password reset for ${email}`);
 await prisma.$disconnect();

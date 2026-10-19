@@ -10,35 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { cn } from "@/lib/utils";
+import { cn, ymd } from "@/lib/utils";
 
-function getTodayString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+// [value text, bar fill] for over / under / within the goal range
+const GOAL_STATUS_CLASSES = {
+  over: ["text-red-500", "bg-red-500"],
+  under: ["text-yellow-500", "bg-yellow-400"],
+  ok: ["text-green-500", "bg-green-500"],
+};
 
-function formatDate(dateStr) {
-  const [year, month, day] = dateStr.split("-");
-  const d = new Date(Number(year), Number(month) - 1, Number(day));
-  return d.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function getCalorieColor(consumed, min, max) {
-  if (min == null || max == null) return "text-foreground";
-  if (consumed > max) return "text-red-500";
-  if (consumed < min) return "text-yellow-500";
-  return "text-green-500";
-}
-
-// section title — small uppercase label used across the dashboard
 function SectionLabel({ children }) {
   return (
     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -47,10 +27,10 @@ function SectionLabel({ children }) {
   );
 }
 
-function MetricBar({ value, max, fillClass }) {
+function MetricBar({ value, max, fillClass, className }) {
   if (!(max > 0)) return null;
   return (
-    <div className="mt-2 w-full bg-muted rounded-full h-1.5">
+    <div className={cn("w-full bg-muted rounded-full h-1.5", className)}>
       <div
         className={cn("h-1.5 rounded-full transition-all", fillClass)}
         style={{ width: `${Math.min(100, (value / max) * 100)}%` }}
@@ -59,9 +39,31 @@ function MetricBar({ value, max, fillClass }) {
   );
 }
 
+function GoalCard({ title, value, min, max, unit, suffix }) {
+  const [textClass, barClass] =
+    GOAL_STATUS_CLASSES[value > max ? "over" : value < min ? "under" : "ok"];
+  return (
+    <Card>
+      <CardContent>
+        <SectionLabel>{title}</SectionLabel>
+        <p className={cn("text-3xl font-bold mt-1", textClass)}>
+          {Math.round(value)}
+          {suffix && (
+            <span className="text-base font-normal text-muted-foreground ml-1">{suffix}</span>
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Goal: {min}–{max} {unit}
+        </p>
+        <MetricBar value={value} max={max} fillClass={barClass} className="mt-2" />
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const today = getTodayString();
+  const today = ymd();
 
   const summaryQuery = useProgressSummary(today);
   const waterQuery = useWaterToday();
@@ -73,13 +75,7 @@ export default function Dashboard() {
   const [activeCalInput, setActiveCalInput] = useState("");
   const [activeCalClientError, setActiveCalClientError] = useState("");
 
-  const loading = summaryQuery.isPending || waterQuery.isPending || goalsQuery.isPending;
-  const error =
-    (summaryQuery.error && summaryQuery.error.message) ||
-    (waterQuery.error && waterQuery.error.message) ||
-    (goalsQuery.error && goalsQuery.error.message);
-
-  if (loading) {
+  if (summaryQuery.isPending || waterQuery.isPending || goalsQuery.isPending) {
     return (
       <div className="space-y-6">
         <div className="flex items-baseline justify-between">
@@ -98,6 +94,8 @@ export default function Dashboard() {
     );
   }
 
+  const error =
+    summaryQuery.error?.message || waterQuery.error?.message || goalsQuery.error?.message;
   if (error) {
     return (
       <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
@@ -106,32 +104,11 @@ export default function Dashboard() {
     );
   }
 
-  const summary = summaryQuery.data;
-  const water = waterQuery.data || { total: 0 };
-  const goals = goalsQuery.data || {};
-
-  const { consumed = {}, burned = {}, net = 0, deficit = 0, workoutLogged = false } = summary || {};
-
-  const calorieColor = getCalorieColor(
-    consumed.calories ?? 0,
-    goals.calorieMin ?? null,
-    goals.calorieMax ?? null
-  );
-  const proteinColor = getCalorieColor(
-    consumed.protein ?? 0,
-    goals.proteinMin ?? null,
-    goals.proteinMax ?? null
-  );
-
-  const activeCaloriesDisplay =
-    burned.active && burned.active > 0 ? Math.round(burned.active).toString() : "—";
-
-  const activeCalError =
-    activeCalClientError || (updateActiveCal.error && updateActiveCal.error.message) || "";
-  const activeCalSaving = updateActiveCal.isPending;
-  const waterAdding = logWaterMutation.isPending;
-
-  const mealTypes = ["breakfast", "lunch", "dinner", "snack"];
+  // All three queries have data here; the API always returns these fields.
+  const { consumed, burned, net, deficit, workoutLogged } = summaryQuery.data;
+  const waterTotal = waterQuery.data.total;
+  const goals = goalsQuery.data;
+  const activeCalError = activeCalClientError || updateActiveCal.error?.message;
 
   function handleSaveActiveCal() {
     const n = Number(activeCalInput);
@@ -146,68 +123,38 @@ export default function Dashboard() {
     );
   }
 
-  function handleQuickWater(oz) {
-    logWaterMutation.mutate({ date: today, amount: oz });
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <span className="text-sm text-muted-foreground">{formatDate(today)}</span>
+        <span className="text-sm text-muted-foreground">
+          {new Date().toLocaleDateString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}
+        </span>
       </div>
 
       {/* 3 Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Calories */}
-        <Card>
-          <CardContent>
-            <SectionLabel>Calories</SectionLabel>
-            <p className={cn("text-3xl font-bold mt-1", calorieColor)}>
-              {Math.round(consumed.calories || 0)}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Goal: {goals.calorieMin ?? "—"}–{goals.calorieMax ?? "—"} kcal
-            </p>
-            <MetricBar
-              value={consumed.calories || 0}
-              max={goals.calorieMax}
-              fillClass={
-                consumed.calories > goals.calorieMax
-                  ? "bg-red-500"
-                  : consumed.calories >= goals.calorieMin
-                    ? "bg-green-500"
-                    : "bg-yellow-400"
-              }
-            />
-          </CardContent>
-        </Card>
-
-        {/* Protein */}
-        <Card>
-          <CardContent>
-            <SectionLabel>Protein</SectionLabel>
-            <p className={cn("text-3xl font-bold mt-1", proteinColor)}>
-              {Math.round(consumed.protein || 0)}
-              <span className="text-base font-normal text-muted-foreground ml-1">g</span>
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Goal: {goals.proteinMin ?? "—"}–{goals.proteinMax ?? "—"} g
-            </p>
-            <MetricBar
-              value={consumed.protein || 0}
-              max={goals.proteinMax}
-              fillClass={
-                consumed.protein > goals.proteinMax
-                  ? "bg-red-500"
-                  : consumed.protein >= goals.proteinMin
-                    ? "bg-green-500"
-                    : "bg-yellow-400"
-              }
-            />
-          </CardContent>
-        </Card>
+        <GoalCard
+          title="Calories"
+          value={consumed.calories}
+          min={goals.calorieMin}
+          max={goals.calorieMax}
+          unit="kcal"
+        />
+        <GoalCard
+          title="Protein"
+          value={consumed.protein}
+          min={goals.proteinMin}
+          max={goals.proteinMax}
+          unit="g"
+          suffix="g"
+        />
 
         {/* Active Burned */}
         <Card>
@@ -248,9 +195,9 @@ export default function Dashboard() {
                     type="button"
                     size="sm"
                     onClick={handleSaveActiveCal}
-                    disabled={activeCalSaving}
+                    disabled={updateActiveCal.isPending}
                   >
-                    {activeCalSaving ? "…" : "Save"}
+                    {updateActiveCal.isPending ? "…" : "Save"}
                   </Button>
                   <Button
                     type="button"
@@ -269,7 +216,9 @@ export default function Dashboard() {
               </div>
             ) : (
               <>
-                <p className="text-3xl font-bold text-primary mt-1">{activeCaloriesDisplay}</p>
+                <p className="text-3xl font-bold text-primary mt-1">
+                  {burned.active > 0 ? Math.round(burned.active) : "—"}
+                </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {burned.active > 0 ? "kcal active burned today" : "Tap Log to add manually"}
                 </p>
@@ -284,22 +233,16 @@ export default function Dashboard() {
         <CardContent className="space-y-4">
           <SectionLabel>Calorie Balance</SectionLabel>
           <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center">
-            <div>
-              <p className="text-2xl sm:text-3xl font-bold">{Math.round(net)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Net calories</p>
-            </div>
-            <div>
-              <p className="text-2xl sm:text-3xl font-bold text-primary">
-                {Math.abs(Math.round(deficit))}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {deficit >= 0 ? "Deficit" : "Surplus"}
-              </p>
-            </div>
-            <div>
-              <p className="text-2xl sm:text-3xl font-bold">{Math.round(burned.total || 0)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Total burned</p>
-            </div>
+            {[
+              [Math.round(net), "Net calories"],
+              [Math.abs(Math.round(deficit)), deficit >= 0 ? "Deficit" : "Surplus", "text-primary"],
+              [Math.round(burned.total), "Total burned"],
+            ].map(([value, label, colorClass]) => (
+              <div key={label}>
+                <p className={cn("text-2xl sm:text-3xl font-bold", colorClass)}>{value}</p>
+                <p className="text-xs text-muted-foreground mt-1">{label}</p>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -351,9 +294,9 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="flex items-end gap-3">
-            <span className="text-4xl font-bold text-sky-500">{Math.round(water.total || 0)}</span>
+            <span className="text-4xl font-bold text-sky-500">{Math.round(waterTotal)}</span>
             <span className="text-base text-sky-500/80 font-medium pb-1">
-              oz &nbsp;·&nbsp; {((water.total || 0) / 8).toFixed(1)} cups
+              oz &nbsp;·&nbsp; {(waterTotal / 8).toFixed(1)} cups
             </span>
             {goals.waterGoal > 0 && (
               <span className="text-xs text-muted-foreground pb-1 ml-auto">
@@ -361,21 +304,14 @@ export default function Dashboard() {
               </span>
             )}
           </div>
-          {goals.waterGoal > 0 && (
-            <div className="w-full bg-muted rounded-full h-1.5">
-              <div
-                className="bg-sky-500 h-1.5 rounded-full transition-all"
-                style={{ width: `${Math.min(100, ((water.total || 0) / goals.waterGoal) * 100)}%` }}
-              />
-            </div>
-          )}
+          <MetricBar value={waterTotal} max={goals.waterGoal} fillClass="bg-sky-500" />
           <div className="grid grid-cols-4 gap-2">
             {[8, 12, 16, 32].map((oz) => (
               <button
                 key={oz}
                 type="button"
-                onClick={() => handleQuickWater(oz)}
-                disabled={waterAdding}
+                onClick={() => logWaterMutation.mutate({ date: today, amount: oz })}
+                disabled={logWaterMutation.isPending}
                 className="flex flex-col items-center justify-center bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 rounded-xl py-3 transition-colors disabled:opacity-50"
               >
                 <span className="text-base font-bold text-sky-500">{oz}</span>
@@ -390,14 +326,14 @@ export default function Dashboard() {
       <div>
         <SectionLabel>Quick Add</SectionLabel>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-          {mealTypes.map((meal) => (
+          {["breakfast", "lunch", "dinner", "snack"].map((meal) => (
             <Button
               key={meal}
               variant="outline"
               onClick={() => navigate("/meals", { state: { openFor: meal } })}
               className="h-auto py-4 capitalize hover:border-primary hover:text-primary"
             >
-              + {meal.charAt(0).toUpperCase() + meal.slice(1)}
+              + {meal}
             </Button>
           ))}
         </div>

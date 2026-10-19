@@ -1,282 +1,110 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
-// Returns true if the server-set sessionHint cookie is present, indicating an
-// active session exists. The actual JWT lives in the httpOnly cookie and is
-// never accessible to JS — this is just a lightweight boolean signal.
+// The JWT is in an httpOnly cookie; the server-set sessionHint cookie is the
+// only session signal JS can see.
 export function isLoggedIn() {
   return document.cookie.split(";").some((c) => c.trim().startsWith("sessionHint="));
 }
 
-function clearSessionHint() {
-  document.cookie = "sessionHint=; Max-Age=0; path=/";
-}
-
-async function request(path, options = {}) {
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
-
+async function request(path, method, body) {
   const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
+    method,
     credentials: "include",
-    headers,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body), // undefined stays undefined (no body)
   });
 
   if (response.status === 401) {
-    clearSessionHint();
+    document.cookie = "sessionHint=; Max-Age=0; path=/";
     window.location.href = "/login";
     return;
   }
 
   if (!response.ok) {
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      body = {};
-    }
-    throw new Error(body.error || `Request failed with status ${response.status}`);
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Request failed with status ${response.status}`);
   }
 
   if (response.status === 204) return null;
   return response.json();
 }
 
-export async function login(email, password, rememberMe = false) {
-  return request("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password, rememberMe }),
-  });
-}
+// Auth
+export const login = (email, password, rememberMe = false) =>
+  request("/api/auth/login", "POST", { email, password, rememberMe });
+export const register = (email, password, name) =>
+  request("/api/auth/register", "POST", { email, password, name });
+export const forgotPassword = (email) => request("/api/auth/forgot-password", "POST", { email });
+export const resetPassword = (email, code, newPassword) =>
+  request("/api/auth/reset-password", "POST", { email, code, newPassword });
+export const logout = () => request("/api/auth/logout", "POST");
+export const changePassword = (currentPassword, newPassword) =>
+  request("/api/auth/password", "PUT", { currentPassword, newPassword });
 
-export async function register(email, password, name) {
-  return request("/api/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ email, password, name }),
-  });
-}
+// Account & goals
+export const getAccount = () => request("/api/account");
+export const updateAccount = (data) => request("/api/account", "PUT", data);
+export const getGoals = () => request("/api/goals");
+export const updateGoals = (data) => request("/api/goals", "PUT", data);
 
-export async function forgotPassword(email) {
-  return request("/api/auth/forgot-password", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
-}
+// Health
+export const updateActiveCalories = (date, calories) =>
+  request("/api/health/active-calories", "PUT", { date, calories });
 
-export async function resetPassword(email, code, newPassword) {
-  return request("/api/auth/reset-password", {
-    method: "POST",
-    body: JSON.stringify({ email, code, newPassword }),
-  });
-}
+// Progress
+export const getProgressSummary = (date) => request(`/api/progress/summary?date=${date}`);
+export const getProgressWeekly = (startDate) =>
+  request(`/api/progress/weekly?startDate=${startDate}`);
+export const getProgressRange = (startDate, numDays) =>
+  request(`/api/progress/range?startDate=${startDate}&numDays=${numDays}`);
 
-export async function logout() {
-  return request("/api/auth/logout", { method: "POST" });
-}
+// Meals
+export const getMeals = (date) => request(`/api/meals?date=${date}`);
+export const addMeal = (data) => request("/api/meals", "POST", data);
+export const deleteMeal = (id) => request(`/api/meals/${id}`, "DELETE");
+export const searchFood = (q) => request(`/api/meals/search?q=${encodeURIComponent(q)}`);
+export const getFoodDetail = (foodId) => request(`/api/meals/foods/${encodeURIComponent(foodId)}`);
+export const getCustomFoods = () => request("/api/meals/custom-foods");
+export const createCustomFood = (data) => request("/api/meals/custom-foods", "POST", data);
+export const updateCustomFood = (id, data) => request(`/api/meals/custom-foods/${id}`, "PUT", data);
+export const deleteCustomFood = (id) => request(`/api/meals/custom-foods/${id}`, "DELETE");
+export const getPresets = () => request("/api/meals/presets");
+export const createPreset = (data) => request("/api/meals/presets", "POST", data);
+export const updatePreset = (id, data) => request(`/api/meals/presets/${id}`, "PUT", data);
+export const deletePreset = (id) => request(`/api/meals/presets/${id}`, "DELETE");
+export const logPreset = (presetId, { date, mealType }) =>
+  request(`/api/meals/presets/${presetId}/log`, "POST", { date, mealType });
+export const getRecentFoods = (mealType) =>
+  request(`/api/meals/recent?mealType=${encodeURIComponent(mealType)}`);
+export const getFavoriteFoods = (mealType) =>
+  request(`/api/meals/favorites?mealType=${encodeURIComponent(mealType)}`);
+export const addFavoriteFood = (body) => request("/api/meals/favorites", "POST", body);
+export const removeFavoriteFood = (foodId, mealType) =>
+  request(`/api/meals/favorites/${foodId}?mealType=${encodeURIComponent(mealType)}`, "DELETE");
 
-export async function getGoals() {
-  return request("/api/goals");
-}
+// Workouts
+export const logWorkout = (data) => request("/api/workouts", "POST", data);
+export const getWorkoutHistory = (limit) => request(`/api/workouts/history?limit=${limit}`);
+export const getCustomExercises = () => request("/api/workouts/custom-exercises");
+export const createCustomExercise = (data) =>
+  request("/api/workouts/custom-exercises", "POST", data);
+export const deleteCustomExercise = (id) =>
+  request(`/api/workouts/custom-exercises/${id}`, "DELETE");
+export const getWorkoutPresets = () => request("/api/workouts/presets");
+export const createWorkoutPreset = (data) => request("/api/workouts/presets", "POST", data);
+export const updateWorkoutPreset = (id, data) =>
+  request(`/api/workouts/presets/${id}`, "PUT", data);
+export const deleteWorkoutPreset = (id) => request(`/api/workouts/presets/${id}`, "DELETE");
 
-export async function getProgressSummary(date) {
-  return request(`/api/progress/summary?date=${date}`);
-}
+// Water
+export const getWaterToday = () => request("/api/water/today");
+export const getWaterEntries = (date) => request(`/api/water?date=${date}`);
+export const logWater = (data) => request("/api/water", "POST", data);
+export const deleteWaterEntry = (id) => request(`/api/water/${id}`, "DELETE");
 
-export async function getMeals(date) {
-  return request(`/api/meals?date=${date}`);
-}
-
-export async function getHealthToday() {
-  return request("/api/health/today");
-}
-
-export async function getWorkouts(date) {
-  return request(`/api/workouts?date=${date}`);
-}
-
-export async function searchFood(q) {
-  return request(`/api/meals/search?q=${encodeURIComponent(q)}`);
-}
-
-export async function getFoodDetail(foodId) {
-  return request(`/api/meals/foods/${encodeURIComponent(foodId)}`);
-}
-
-export async function addMeal(data) {
-  return request("/api/meals", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function deleteMeal(id) {
-  return request(`/api/meals/${id}`, { method: "DELETE" });
-}
-
-export async function getWorkoutTemplate() {
-  return request("/api/workouts/template");
-}
-
-export async function logWorkout(data) {
-  return request("/api/workouts", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function getWorkoutHistory(limit = 5) {
-  return request(`/api/workouts/history?limit=${limit}`);
-}
-
-export async function getProgressWeekly(startDate) {
-  return request(`/api/progress/weekly?startDate=${startDate}`);
-}
-
-export async function changePassword(currentPassword, newPassword) {
-  return request("/api/auth/password", {
-    method: "PUT",
-    body: JSON.stringify({ currentPassword, newPassword }),
-  });
-}
-
-export async function getCustomFoods() {
-  return request("/api/meals/custom-foods");
-}
-
-export async function createCustomFood(data) {
-  return request("/api/meals/custom-foods", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function updateCustomFood(id, data) {
-  return request(`/api/meals/custom-foods/${id}`, { method: "PUT", body: JSON.stringify(data) });
-}
-
-export async function deleteCustomFood(id) {
-  return request(`/api/meals/custom-foods/${id}`, { method: "DELETE" });
-}
-
-export async function getPresets() {
-  return request("/api/meals/presets");
-}
-
-export async function createPreset(data) {
-  return request("/api/meals/presets", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function updatePreset(id, data) {
-  return request(`/api/meals/presets/${id}`, { method: "PUT", body: JSON.stringify(data) });
-}
-
-export async function deletePreset(id) {
-  return request(`/api/meals/presets/${id}`, { method: "DELETE" });
-}
-
-export async function logPreset(presetId, { date, mealType }) {
-  return request(`/api/meals/presets/${presetId}/log`, {
-    method: "POST",
-    body: JSON.stringify({ date, mealType }),
-  });
-}
-
-export async function getRecentFoods(mealType) {
-  return request(`/api/meals/recent?mealType=${encodeURIComponent(mealType)}`);
-}
-
-export async function getFavoriteFoods(mealType) {
-  return request(`/api/meals/favorites?mealType=${encodeURIComponent(mealType)}`);
-}
-
-export async function addFavoriteFood(body) {
-  return request("/api/meals/favorites", { method: "POST", body: JSON.stringify(body) });
-}
-
-export async function removeFavoriteFood(foodId, mealType) {
-  return request(`/api/meals/favorites/${foodId}?mealType=${encodeURIComponent(mealType)}`, {
-    method: "DELETE",
-  });
-}
-
-export async function getCustomExercises() {
-  return request("/api/workouts/custom-exercises");
-}
-
-export async function createCustomExercise(data) {
-  return request("/api/workouts/custom-exercises", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function deleteCustomExercise(id) {
-  return request(`/api/workouts/custom-exercises/${id}`, { method: "DELETE" });
-}
-
-export async function getWorkoutPresets() {
-  return request("/api/workouts/presets");
-}
-
-export async function createWorkoutPreset(data) {
-  return request("/api/workouts/presets", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function updateWorkoutPreset(id, data) {
-  return request(`/api/workouts/presets/${id}`, { method: "PUT", body: JSON.stringify(data) });
-}
-
-export async function deleteWorkoutPreset(id) {
-  return request(`/api/workouts/presets/${id}`, { method: "DELETE" });
-}
-
-export async function getWaterToday() {
-  return request("/api/water/today");
-}
-
-export async function getWaterEntries(date) {
-  return request(`/api/water?date=${date}`);
-}
-
-export async function logWater(data) {
-  return request("/api/water", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function deleteWaterEntry(id) {
-  return request(`/api/water/${id}`, { method: "DELETE" });
-}
-
-export async function getAccount() {
-  return request("/api/account");
-}
-
-export async function updateAccount(data) {
-  return request("/api/account", { method: "PUT", body: JSON.stringify(data) });
-}
-
-export async function updateActiveCalories(date, calories) {
-  return request("/api/health/active-calories", {
-    method: "PUT",
-    body: JSON.stringify({ date, calories }),
-  });
-}
-
-export async function updateGoals(data) {
-  return request("/api/goals", { method: "PUT", body: JSON.stringify(data) });
-}
-
-export async function getProgressRange(startDate, numDays) {
-  return request(`/api/progress/range?startDate=${startDate}&numDays=${numDays}`);
-}
-
-export async function getUsers() {
-  return request("/api/admin/users");
-}
-
-export async function getUserById(id) {
-  return request(`/api/admin/users/${id}`);
-}
-
-export async function updateUser(id, patch) {
-  return request(`/api/admin/users/${id}`, { method: "PUT", body: JSON.stringify(patch) });
-}
-
-export async function resetUserPassword(id, newPassword) {
-  return request(`/api/admin/users/${id}/password`, {
-    method: "PUT",
-    body: JSON.stringify({ newPassword }),
-  });
-}
-
-export async function deleteUser(id) {
-  return request(`/api/admin/users/${id}`, { method: "DELETE" });
-}
+// Admin
+export const getUsers = () => request("/api/admin/users");
+export const updateUser = (id, patch) => request(`/api/admin/users/${id}`, "PUT", patch);
+export const resetUserPassword = (id, newPassword) =>
+  request(`/api/admin/users/${id}/password`, "PUT", { newPassword });
+export const deleteUser = (id) => request(`/api/admin/users/${id}`, "DELETE");

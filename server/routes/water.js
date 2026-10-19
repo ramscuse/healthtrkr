@@ -1,19 +1,8 @@
 import { Router } from "express";
 import prisma from "../../lib/prisma.js";
+import { parseDate, dayRange } from "../lib/dates.js";
 
 const router = Router();
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-function parseDate(dateStr) {
-  if (!DATE_RE.test(dateStr)) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
-  // Reject overflow dates that JS normalizes (e.g. 2024-02-31 → March 2)
-  const [y, m, day] = dateStr.split("-").map(Number);
-  if (d.getUTCFullYear() !== y || d.getUTCMonth() + 1 !== m || d.getUTCDate() !== day) return null;
-  return d;
-}
 
 // GET /api/water?date=YYYY-MM-DD  — entries for a day
 router.get("/", async (req, res, next) => {
@@ -24,13 +13,8 @@ router.get("/", async (req, res, next) => {
     const parsed = parseDate(date);
     if (!parsed) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
 
-    const start = new Date(parsed);
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(parsed);
-    end.setUTCHours(23, 59, 59, 999);
-
     const entries = await prisma.waterEntry.findMany({
-      where: { userId, date: { gte: start, lte: end } },
+      where: { userId, date: dayRange(parsed) },
       orderBy: { createdAt: "asc" },
     });
     res.json(entries);
@@ -42,15 +26,8 @@ router.get("/", async (req, res, next) => {
 // GET /api/water/today  — today's total oz
 router.get("/today", async (req, res, next) => {
   try {
-    const { userId } = req.user;
-    const now = new Date();
-    const start = new Date(now);
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(now);
-    end.setUTCHours(23, 59, 59, 999);
-
     const entries = await prisma.waterEntry.findMany({
-      where: { userId, date: { gte: start, lte: end } },
+      where: { userId: req.user.userId, date: dayRange(new Date()) },
     });
     const total = entries.reduce((sum, e) => sum + e.amount, 0);
     res.json({ total, entries });

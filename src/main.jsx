@@ -9,8 +9,7 @@ import { queryClient } from "./lib/queryClient.js";
 import "@fontsource-variable/geist";
 import "./index.css";
 
-const root = createRoot(document.getElementById("root"));
-root.render(
+createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

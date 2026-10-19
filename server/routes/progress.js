@@ -1,133 +1,115 @@
 import { Router } from "express";
 import prisma from "../../lib/prisma.js";
+import { parseDate, dayRange } from "../lib/dates.js";
 
 const router = Router();
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isoDay = (d) => d.toISOString().slice(0, 10);
 
-function parseDate(str) {
-  if (!DATE_RE.test(str)) return null;
-  const d = new Date(str);
-  return isNaN(d.getTime()) ? null : str;
+// `numDays` consecutive YYYY-MM-DD strings starting at `start` (a UTC-midnight Date).
+function daysFrom(start, numDays) {
+  const days = [];
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(start);
+    d.setUTCDate(d.getUTCDate() + i);
+    days.push(isoDay(d));
+  }
+  return days;
 }
 
-async function buildDaySummary(userId, dateStr) {
-  const start = new Date(dateStr);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(dateStr);
-  end.setUTCHours(23, 59, 59, 999);
+// One query per table over the whole span, bucketed by UTC day in memory.
+async function buildSummaries(userId, days) {
+  if (days.length === 0) return [];
+  const date = { gte: dayRange(days[0]).gte, lte: dayRange(days.at(-1)).lte };
 
-  const [goals, meals, health, workout, waterEntries] = await Promise.all([
+  const [goals, meals, health, workouts, waterEntries] = await Promise.all([
     prisma.goals.findUnique({ where: { userId } }),
-    prisma.mealEntry.findMany({ where: { userId, date: { gte: start, lte: end } } }),
-    prisma.healthData.findUnique({ where: { userId_date: { userId, date: start } } }),
-    prisma.workoutSession.findFirst({ where: { userId, date: { gte: start, lte: end } } }),
-    prisma.waterEntry.findMany({ where: { userId, date: { gte: start, lte: end } } }),
+    prisma.mealEntry.findMany({ where: { userId, date } }),
+    prisma.healthData.findMany({ where: { userId, date: { in: days.map((d) => new Date(d)) } } }),
+    prisma.workoutSession.findMany({ where: { userId, date }, select: { date: true } }),
+    prisma.waterEntry.findMany({ where: { userId, date } }),
   ]);
 
-  const consumed = meals.reduce(
-    (acc, m) => ({
-      calories: acc.calories + (m.caloriesSnapshot ?? 0),
-      protein: acc.protein + (m.proteinSnapshot ?? 0),
-      carbs: acc.carbs + (m.carbsSnapshot ?? 0),
-      fat: acc.fat + (m.fatSnapshot ?? 0),
-    }),
-    { calories: 0, protein: 0, carbs: 0, fat: 0 }
-  );
+  const workoutDays = new Set(workouts.map((w) => isoDay(w.date)));
 
-  const burned = {
-    active: health?.activeCalories ?? 0,
-    resting: health?.restingCalories ?? 0,
-    total: (health?.activeCalories ?? 0) + (health?.restingCalories ?? 0),
-  };
+  return days.map((day) => {
+    const consumed = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    for (const m of meals) {
+      if (isoDay(m.date) !== day) continue;
+      consumed.calories += m.caloriesSnapshot ?? 0;
+      consumed.protein += m.proteinSnapshot ?? 0;
+      consumed.carbs += m.carbsSnapshot ?? 0;
+      consumed.fat += m.fatSnapshot ?? 0;
+    }
 
-  const water = waterEntries.reduce((sum, e) => sum + e.amount, 0);
-  const net = consumed.calories - burned.active;
-  const deficit = (goals?.calorieMax ?? 0) - net;
+    const h = health.find((r) => isoDay(r.date) === day);
+    const burned = {
+      active: h?.activeCalories ?? 0,
+      resting: h?.restingCalories ?? 0,
+      total: (h?.activeCalories ?? 0) + (h?.restingCalories ?? 0),
+    };
 
-  return {
-    date: dateStr,
-    goals: goals
-      ? {
-          calorieMin: goals.calorieMin,
-          calorieMax: goals.calorieMax,
-          proteinMin: goals.proteinMin,
-          proteinMax: goals.proteinMax,
-          carbsGoal: goals.carbsGoal,
-          fatGoal: goals.fatGoal,
-          waterGoal: goals.waterGoal,
-        }
-      : null,
-    consumed,
-    burned,
-    water,
-    net,
-    deficit,
-    workoutLogged: !!workout,
-  };
+    const water = waterEntries
+      .filter((e) => isoDay(e.date) === day)
+      .reduce((sum, e) => sum + e.amount, 0);
+    const net = consumed.calories - burned.active;
+    const deficit = (goals?.calorieMax ?? 0) - net;
+
+    return {
+      date: day,
+      goals: goals
+        ? {
+            calorieMin: goals.calorieMin,
+            calorieMax: goals.calorieMax,
+            proteinMin: goals.proteinMin,
+            proteinMax: goals.proteinMax,
+            carbsGoal: goals.carbsGoal,
+            fatGoal: goals.fatGoal,
+            waterGoal: goals.waterGoal,
+          }
+        : null,
+      consumed,
+      burned,
+      water,
+      net,
+      deficit,
+      workoutLogged: workoutDays.has(day),
+    };
+  });
+}
+
+function startDateOrToday(raw) {
+  return parseDate(raw || isoDay(new Date()));
 }
 
 // GET /api/progress/summary?date=YYYY-MM-DD
 router.get("/summary", async (req, res, next) => {
   try {
-    const { userId } = req.user;
-    const raw = req.query.date || new Date().toISOString().slice(0, 10);
-    const date = parseDate(raw);
+    const date = startDateOrToday(req.query.date);
     if (!date) return res.status(400).json({ error: "date must be in YYYY-MM-DD format" });
-    const summary = await buildDaySummary(userId, date);
+    const [summary] = await buildSummaries(req.user.userId, [isoDay(date)]);
     res.json(summary);
   } catch (err) {
     next(err);
   }
 });
 
-// GET /api/progress/weekly?startDate=YYYY-MM-DD
-router.get("/weekly", async (req, res, next) => {
+async function sendSpan(req, res, next, numDays) {
   try {
-    const { userId } = req.user;
-    const raw = req.query.startDate || new Date().toISOString().slice(0, 10);
-    const startDate = parseDate(raw);
-    if (!startDate)
-      return res.status(400).json({ error: "startDate must be in YYYY-MM-DD format" });
-    const start = new Date(startDate);
-
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setUTCDate(d.getUTCDate() + i);
-      days.push(d.toISOString().slice(0, 10));
-    }
-
-    const summaries = await Promise.all(days.map((d) => buildDaySummary(userId, d)));
-    res.json(summaries);
+    const start = startDateOrToday(req.query.startDate);
+    if (!start) return res.status(400).json({ error: "startDate must be in YYYY-MM-DD format" });
+    res.json(await buildSummaries(req.user.userId, daysFrom(start, numDays)));
   } catch (err) {
     next(err);
   }
-});
+}
+
+// GET /api/progress/weekly?startDate=YYYY-MM-DD
+router.get("/weekly", (req, res, next) => sendSpan(req, res, next, 7));
 
 // GET /api/progress/range?startDate=YYYY-MM-DD&numDays=N
-router.get("/range", async (req, res, next) => {
-  try {
-    const { userId } = req.user;
-    const raw = req.query.startDate || new Date().toISOString().slice(0, 10);
-    const startDate = parseDate(raw);
-    if (!startDate)
-      return res.status(400).json({ error: "startDate must be in YYYY-MM-DD format" });
-    const numDays = Math.min(parseInt(req.query.numDays) || 7, 31);
-    const start = new Date(startDate);
-
-    const days = [];
-    for (let i = 0; i < numDays; i++) {
-      const d = new Date(start);
-      d.setUTCDate(d.getUTCDate() + i);
-      days.push(d.toISOString().slice(0, 10));
-    }
-
-    const summaries = await Promise.all(days.map((d) => buildDaySummary(userId, d)));
-    res.json(summaries);
-  } catch (err) {
-    next(err);
-  }
-});
+router.get("/range", (req, res, next) =>
+  sendSpan(req, res, next, Math.min(parseInt(req.query.numDays) || 7, 31))
+);
 
 export default router;

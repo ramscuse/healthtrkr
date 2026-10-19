@@ -3,15 +3,26 @@ import prisma from "../../lib/prisma.js";
 
 const router = Router();
 
+const GOAL_FIELDS = [
+  "calorieMin",
+  "calorieMax",
+  "proteinMin",
+  "proteinMax",
+  "carbsGoal",
+  "fatGoal",
+  "waterGoal",
+  "startWeight",
+];
+
+// Lazily creates the row (schema defaults) on first read.
 router.get("/", async (req, res, next) => {
   try {
     const { userId } = req.user;
-
-    let goals = await prisma.goals.findUnique({ where: { userId } });
-    if (!goals) {
-      goals = await prisma.goals.create({ data: { userId } });
-    }
-
+    const goals = await prisma.goals.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+    });
     res.json(goals);
   } catch (err) {
     next(err);
@@ -21,33 +32,17 @@ router.get("/", async (req, res, next) => {
 router.put("/", async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const {
-      calorieMin,
-      calorieMax,
-      proteinMin,
-      proteinMax,
-      carbsGoal,
-      fatGoal,
-      waterGoal,
-      startWeight,
-    } = req.body;
-
-    const numericFields = {
-      calorieMin,
-      calorieMax,
-      proteinMin,
-      proteinMax,
-      carbsGoal,
-      fatGoal,
-      waterGoal,
-      startWeight,
-    };
-    for (const [key, val] of Object.entries(numericFields)) {
-      if (val !== undefined && (typeof val !== "number" || !isFinite(val) || val < 0)) {
+    const data = {};
+    for (const key of GOAL_FIELDS) {
+      const val = req.body[key];
+      if (val === undefined) continue;
+      if (typeof val !== "number" || !isFinite(val) || val < 0) {
         return res.status(400).json({ error: `${key} must be a non-negative finite number` });
       }
+      data[key] = val;
     }
 
+    const { calorieMin, calorieMax, proteinMin, proteinMax } = data;
     if (calorieMin !== undefined && calorieMax !== undefined && calorieMin > calorieMax) {
       return res.status(400).json({ error: "calorieMin must not exceed calorieMax" });
     }
@@ -57,29 +52,9 @@ router.put("/", async (req, res, next) => {
 
     const goals = await prisma.goals.upsert({
       where: { userId },
-      update: {
-        calorieMin,
-        calorieMax,
-        proteinMin,
-        proteinMax,
-        carbsGoal,
-        fatGoal,
-        waterGoal,
-        startWeight,
-      },
-      create: {
-        userId,
-        calorieMin,
-        calorieMax,
-        proteinMin,
-        proteinMax,
-        carbsGoal,
-        fatGoal,
-        waterGoal,
-        startWeight,
-      },
+      update: data,
+      create: { userId, ...data },
     });
-
     res.json(goals);
   } catch (err) {
     next(err);

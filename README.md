@@ -47,9 +47,6 @@ FATSECRET_CONSUMER_SECRET=your-shared-secret
 # Optional — bind the Vite dev server to your LAN (default: localhost)
 # VITE_HOST=0.0.0.0
 
-# Optional — needed only if you want to re-seed the food database from USDA
-USDA_API_KEY=your-usda-api-key
-
 # Optional — needed only for password reset emails via EmailJS
 EMAILJS_SERVICE_ID=your-service-id
 EMAILJS_TEMPLATE_ID=your-template-id
@@ -65,12 +62,6 @@ psql "postgresql://postgres:your-password@localhost:5432/postgres" -c "CREATE DA
 
 # 5. Run migrations
 npm run db:migrate
-
-# 6. (Optional) Seed the food search database (~6,000 common foods)
-npm run db:seed-foods
-
-# 7. (Optional) Seed a test user and default goals
-npm run db:seed
 ```
 
 ---
@@ -128,9 +119,6 @@ Just register a new account at `/login` (Register tab). Each user has fully isol
 | `npm run build`             | Production frontend build                       |
 | `npm start`                 | Production server (serves built frontend)       |
 | `npm run db:migrate`        | Run Prisma migrations                           |
-| `npm run db:seed`           | Seed test user and default goals                |
-| `npm run db:seed-foods`     | Seed local food search database (USDA)          |
-| `npm run db:seed-off-foods` | Seed additional foods from Open Food Facts      |
 | `npm run db:reset-password` | CLI utility to reset a user's password directly |
 | `npm run db:studio`         | Open Prisma Studio (DB browser)                 |
 

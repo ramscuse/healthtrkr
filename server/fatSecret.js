@@ -1,15 +1,7 @@
 import crypto from "crypto";
+import prisma from "../lib/prisma.js";
 
 const API_URL = "https://platform.fatsecret.com/rest/server.api";
-const FETCH_TIMEOUT_MS = 10_000;
-
-class FatSecretError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = "FatSecretError";
-    this.code = code;
-  }
-}
 
 // Stricter percent-encoding than encodeURIComponent — RFC 3986 also encodes !'()*
 function pctEncode(s) {
@@ -46,12 +38,10 @@ async function apiFetch(method, params) {
     ...params,
     oauth_consumer_key: key,
     oauth_signature_method: "HMAC-SHA1",
-    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_timestamp: Math.floor(Date.now() / 1000),
     oauth_nonce: crypto.randomBytes(16).toString("hex"),
     oauth_version: "1.0",
   };
-  for (const k of Object.keys(allParams)) allParams[k] = String(allParams[k]);
-
   allParams.oauth_signature = signRequest("POST", API_URL, allParams, secret);
 
   const body = Object.entries(allParams)
@@ -62,13 +52,13 @@ async function apiFetch(method, params) {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) throw new Error(`FatSecret HTTP error: ${res.status}`);
 
   const data = await res.json();
-  if (data?.error) throw new FatSecretError(data.error.code, data.error.message);
+  if (data?.error) throw new Error(`FatSecret API error ${data.error.code}: ${data.error.message}`);
   return data;
 }
 
@@ -78,17 +68,12 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-function requiredNum(v) {
-  const n = num(v);
-  return n === null ? 0 : n;
-}
-
+// FatSecret returns a bare object instead of a one-element array.
 function asArray(v) {
-  if (Array.isArray(v)) return v;
-  if (v == null) return [];
-  return [v];
+  return Array.isArray(v) ? v : v == null ? [] : [v];
 }
 
+// Keys (minus servingId) mirror FoodServing columns; materializeFood writes them as-is.
 function normalizeServing(s) {
   return {
     servingId: Number(s.serving_id),
@@ -98,10 +83,10 @@ function normalizeServing(s) {
     measurementDescription: s.measurement_description || null,
     numberOfUnits: num(s.number_of_units),
     isDefault: s.is_default === "1" || s.is_default === 1,
-    calories: requiredNum(s.calories),
-    protein: requiredNum(s.protein),
-    carbs: requiredNum(s.carbohydrate),
-    fat: requiredNum(s.fat),
+    calories: num(s.calories) ?? 0,
+    protein: num(s.protein) ?? 0,
+    carbs: num(s.carbohydrate) ?? 0,
+    fat: num(s.fat) ?? 0,
     saturatedFat: num(s.saturated_fat),
     sugar: num(s.sugar),
     addedSugars: num(s.added_sugars),
@@ -110,15 +95,13 @@ function normalizeServing(s) {
   };
 }
 
-function normalizeFood(food) {
-  const servings = asArray(food?.servings?.serving).map(normalizeServing);
+function foodSummary(food) {
   return {
     foodId: Number(food.food_id),
     foodName: food.food_name || "",
     brandName: food.brand_name || null,
     foodType: food.food_type || "Generic",
     foodUrl: food.food_url || null,
-    servings,
   };
 }
 
@@ -138,86 +121,51 @@ function parseDefaultPreview(description) {
   };
 }
 
-// Lightweight food summary returned by /search. Full servings come from
-// fetchFoodById on demand (foods.search v5 requires the premier scope which
-// basic-tier accounts don't have, so the multi-serving array is fetched lazily
-// from the basic-scope food.get endpoint when the user picks a food).
-function normalizeSearchHit(food) {
-  return {
-    foodId: Number(food.food_id),
-    foodName: food.food_name || "",
-    brandName: food.brand_name || null,
-    foodType: food.food_type || "Generic",
-    foodUrl: food.food_url || null,
-    defaultPreview: parseDefaultPreview(food.food_description),
-  };
-}
-
-export async function searchFoods(query, limit = 10) {
-  const data = await apiFetch("foods.search", {
-    search_expression: query,
-    max_results: limit,
-  });
-  const raw = data?.foods?.food;
-  return asArray(raw)
-    .map(normalizeSearchHit)
+// Lightweight hits for /search. Full servings come from fetchFoodById on demand
+// (foods.search v5 requires the premier scope which basic-tier accounts don't
+// have, so servings are fetched lazily from food.get when the user picks a food).
+export async function searchFoods(query) {
+  const data = await apiFetch("foods.search", { search_expression: query, max_results: 10 });
+  return asArray(data?.foods?.food)
+    .map((f) => ({ ...foodSummary(f), defaultPreview: parseDefaultPreview(f.food_description) }))
     .filter((f) => f.foodId);
 }
 
 export async function fetchFoodById(foodId) {
   const data = await apiFetch("food.get", { food_id: foodId });
   if (!data?.food) return null;
-  return normalizeFood(data.food);
+  return {
+    ...foodSummary(data.food),
+    servings: asArray(data.food.servings?.serving).map(normalizeServing),
+  };
 }
 
-// Upsert a FatSecret-sourced Food + its servings. The caller passes the
-// normalized response from searchFoods/fetchFoodById — never client input —
-// so the shared Food row (userId=null) can't be poisoned with attacker-
-// controlled nutrition data. Servings are upserted per-row by the unique
-// (foodId, fatSecretServingId) key, avoiding the delete+create race that
-// would otherwise let two concurrent materializations of the same food
-// collide on the unique constraint.
-export async function materializeFood(prisma, fsFood) {
+// Fetch a FatSecret food and upsert it + its servings, returning { food, servings }
+// (or null if FatSecret has no such food). Nutrition always comes from FatSecret,
+// never client input, so the shared Food row (userId=null) can't be poisoned.
+// Servings are upserted per-row by the unique (foodId, fatSecretServingId) key,
+// avoiding the delete+create race that would otherwise let two concurrent
+// materializations of the same food collide on the unique constraint.
+export async function materializeFood(foodId) {
+  const fsFood = await fetchFoodById(foodId);
+  if (!fsFood) return null;
   return prisma.$transaction(async (tx) => {
+    const fields = {
+      name: fsFood.foodName,
+      brandName: fsFood.brandName,
+      foodType: fsFood.foodType,
+      foodUrl: fsFood.foodUrl,
+    };
     const food = await tx.food.upsert({
       where: { fatSecretFoodId: fsFood.foodId },
-      create: {
-        source: "fatsecret",
-        fatSecretFoodId: fsFood.foodId,
-        name: fsFood.foodName,
-        brandName: fsFood.brandName,
-        foodType: fsFood.foodType,
-        foodUrl: fsFood.foodUrl,
-      },
-      update: {
-        name: fsFood.foodName,
-        brandName: fsFood.brandName,
-        foodType: fsFood.foodType,
-        foodUrl: fsFood.foodUrl,
-      },
+      create: { source: "fatsecret", fatSecretFoodId: fsFood.foodId, ...fields },
+      update: fields,
     });
 
-    for (const s of fsFood.servings) {
-      const data = {
-        description: s.description,
-        metricAmount: s.metricAmount,
-        metricUnit: s.metricUnit,
-        measurementDescription: s.measurementDescription,
-        numberOfUnits: s.numberOfUnits,
-        isDefault: s.isDefault,
-        calories: s.calories,
-        protein: s.protein,
-        carbs: s.carbs,
-        fat: s.fat,
-        saturatedFat: s.saturatedFat,
-        sugar: s.sugar,
-        addedSugars: s.addedSugars,
-        fiber: s.fiber,
-        sodium: s.sodium,
-      };
+    for (const { servingId, ...data } of fsFood.servings) {
       await tx.foodServing.upsert({
-        where: { foodId_fatSecretServingId: { foodId: food.id, fatSecretServingId: s.servingId } },
-        create: { foodId: food.id, fatSecretServingId: s.servingId, ...data },
+        where: { foodId_fatSecretServingId: { foodId: food.id, fatSecretServingId: servingId } },
+        create: { foodId: food.id, fatSecretServingId: servingId, ...data },
         update: data,
       });
     }

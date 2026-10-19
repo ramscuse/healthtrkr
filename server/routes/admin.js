@@ -1,11 +1,15 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import prisma from "../../lib/prisma.js";
-import { validatePassword } from "../lib/passwordPolicy.js";
+import { validatePassword, SALT_ROUNDS } from "../lib/passwordPolicy.js";
 
 const router = Router();
-const SALT_ROUNDS = 12;
 const VALID_ROLES = ["user", "admin"];
+
+// Thrown inside a transaction to roll it back; the route's catch turns it into a 4xx.
+function httpError(status, message) {
+  return Object.assign(new Error(message), { httpStatus: status });
+}
 
 const USER_SELECT = {
   id: true,
@@ -114,90 +118,69 @@ router.put("/users/:id", async (req, res, next) => {
 
     const actorId = req.user.userId;
 
-    // Read target inside the transaction so the last-admin check operates on
-    // the same snapshot as the update — prevents a concurrent demotion from
-    // making `target.role` stale and slipping past the guard.
-    try {
-      const updated = await prisma.$transaction(
-        async (tx) => {
-          const target = await tx.user.findUnique({
-            where: { id: req.params.id },
-            select: { id: true, email: true, name: true, role: true, darkMode: true },
-          });
-          if (!target) {
-            const err = new Error("User not found");
-            err.code = "NOT_FOUND";
-            throw err;
+    // Target is read inside the Serializable transaction so the last-admin
+    // guard and the update see the same snapshot.
+    const updated = await prisma.$transaction(
+      async (tx) => {
+        const target = await tx.user.findUnique({
+          where: { id: req.params.id },
+          select: { id: true, email: true, name: true, role: true, darkMode: true },
+        });
+        if (!target) throw httpError(404, "User not found");
+
+        if (target.role === "admin" && data.role === "user") {
+          const adminCount = await tx.user.count({ where: { role: "admin" } });
+          if (adminCount <= 1) throw httpError(400, "Cannot demote the last admin");
+        }
+
+        // Snapshot the actor before the update so a self-edit logs the old name.
+        const actor =
+          actorId === target.id
+            ? { email: target.email, name: target.name }
+            : await tx.user.findUnique({
+                where: { id: actorId },
+                select: { email: true, name: true },
+              });
+
+        const updatedUser = await tx.user.update({
+          where: { id: target.id },
+          data,
+          select: USER_SELECT,
+        });
+
+        // Log only fields that actually changed, plus actor/target identity so
+        // the row stays readable after a later delete nulls either FK.
+        const before = {};
+        const after = {};
+        for (const key of Object.keys(data)) {
+          if (target[key] !== data[key]) {
+            before[key] = target[key];
+            after[key] = data[key];
           }
-
-          if (target.role === "admin" && data.role === "user") {
-            const adminCount = await tx.user.count({ where: { role: "admin" } });
-            if (adminCount <= 1) {
-              const err = new Error("Cannot demote the last admin");
-              err.code = "LAST_ADMIN";
-              throw err;
-            }
-          }
-
-          // Snapshot the actor BEFORE the update — otherwise a self-edit
-          // (actorId === target.id) would record the post-update name in
-          // `before.actor`, leaving the audit row internally inconsistent.
-          // Reuse the target read for self-edits to save a roundtrip.
-          const actor =
-            actorId === target.id
-              ? { email: target.email, name: target.name }
-              : await tx.user.findUnique({
-                  where: { id: actorId },
-                  select: { email: true, name: true },
-                });
-
-          const updatedUser = await tx.user.update({
-            where: { id: target.id },
-            data,
-            select: USER_SELECT,
-          });
-
-          // Capture only the fields that actually changed so the audit row
-          // tells a reviewer "what did this admin alter" at a glance. Identity
-          // (`actor`/`target` blocks) is snapshotted alongside the diff so the
-          // row remains self-describing after either FK is null-ed out by a
-          // later user delete.
-          const before = {};
-          const after = {};
-          for (const key of Object.keys(data)) {
-            if (target[key] !== data[key]) {
-              before[key] = target[key];
-              after[key] = data[key];
-            }
-          }
-          const action = "role" in after ? "ROLE_CHANGE" : "PROFILE_UPDATE";
-          if (Object.keys(after).length > 0) {
-            await tx.adminAuditLog.create({
-              data: {
-                adminId: actorId,
-                targetUserId: target.id,
-                action,
-                before: {
-                  ...before,
-                  actor: actor ? { email: actor.email, name: actor.name } : null,
-                  target: { email: target.email, name: target.name, role: target.role },
-                },
-                after,
+        }
+        if (Object.keys(after).length > 0) {
+          await tx.adminAuditLog.create({
+            data: {
+              adminId: actorId,
+              targetUserId: target.id,
+              action: "role" in after ? "ROLE_CHANGE" : "PROFILE_UPDATE",
+              before: {
+                ...before,
+                actor,
+                target: { email: target.email, name: target.name, role: target.role },
               },
-            });
-          }
+              after,
+            },
+          });
+        }
 
-          return updatedUser;
-        },
-        { isolationLevel: "Serializable" }
-      );
-      res.json(updated);
-    } catch (err) {
-      if (err.code === "NOT_FOUND") return res.status(404).json({ error: err.message });
-      if (err.code === "LAST_ADMIN") return res.status(400).json({ error: err.message });
-      throw err;
-    }
+        return updatedUser;
+      },
+      { isolationLevel: "Serializable" }
+    );
+    res.json(updated);
   } catch (err) {
+    if (err.httpStatus) return res.status(err.httpStatus).json({ error: err.message });
     next(err);
   }
 });
@@ -209,25 +192,20 @@ router.put("/users/:id/password", async (req, res, next) => {
     const passwordError = validatePassword(newPassword);
     if (passwordError) return res.status(400).json({ error: passwordError });
 
-    const target = await prisma.user.findUnique({
-      where: { id: req.params.id },
-      select: { id: true, email: true, name: true },
-    });
+    const actorId = req.user.userId;
+    const [target, actor] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, email: true, name: true },
+      }),
+      prisma.user.findUnique({ where: { id: actorId }, select: { email: true, name: true } }),
+    ]);
     if (!target) return res.status(404).json({ error: "User not found" });
 
     const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    const actorId = req.user.userId;
-    const actor = await prisma.user.findUnique({
-      where: { id: actorId },
-      select: { email: true, name: true },
-    });
 
-    // Atomically rotate the password, bump tokenVersion to invalidate any
-    // active sessions for the target user, invalidate outstanding self-serve
-    // reset tokens so a stale 6-digit code can't still be redeemed, and
-    // record the admin action. Both actor and target identity are snapshotted
-    // into `before` so the audit row stays readable even if either user is
-    // later deleted (SetNull FKs clear adminId/targetUserId).
+    // Atomically: rotate password, bump tokenVersion (kills target's sessions),
+    // void outstanding self-serve reset codes, and write the audit row.
     await prisma.$transaction([
       prisma.user.update({
         where: { id: target.id },
@@ -242,10 +220,7 @@ router.put("/users/:id/password", async (req, res, next) => {
           adminId: actorId,
           targetUserId: target.id,
           action: "PASSWORD_RESET",
-          before: {
-            actor: actor ? { email: actor.email, name: actor.name } : null,
-            target: { email: target.email, name: target.name },
-          },
+          before: { actor, target: { email: target.email, name: target.name } },
         },
       }),
     ]);
@@ -265,58 +240,42 @@ router.delete("/users/:id", async (req, res, next) => {
 
     const actorId = req.user.userId;
 
-    // Read target inside the transaction so the last-admin check sees the
-    // same snapshot as the delete (a concurrent demote-then-delete pair would
-    // otherwise both observe a stale role and could empty the admin set).
-    try {
-      await prisma.$transaction(
-        async (tx) => {
-          const target = await tx.user.findUnique({
-            where: { id: req.params.id },
-            select: { id: true, email: true, name: true, role: true },
-          });
-          if (!target) {
-            const err = new Error("User not found");
-            err.code = "NOT_FOUND";
-            throw err;
-          }
-          if (target.role === "admin") {
-            const adminCount = await tx.user.count({ where: { role: "admin" } });
-            if (adminCount <= 1) {
-              const err = new Error("Cannot delete the last admin");
-              err.code = "LAST_ADMIN";
-              throw err;
-            }
-          }
-          // Capture actor + target identity in `before` so the log row stays
-          // meaningful once the target FK is null-ed out by the cascade
-          // SetNull (and the adminId FK, if the acting admin is later deleted).
-          const actor = await tx.user.findUnique({
-            where: { id: actorId },
-            select: { email: true, name: true },
-          });
-          await tx.adminAuditLog.create({
-            data: {
-              adminId: actorId,
-              targetUserId: target.id,
-              action: "DELETE",
-              before: {
-                actor: actor ? { email: actor.email, name: actor.name } : null,
-                target: { email: target.email, name: target.name, role: target.role },
-              },
+    // Same-snapshot last-admin guard as PUT (a concurrent demote + delete
+    // could otherwise empty the admin set).
+    await prisma.$transaction(
+      async (tx) => {
+        const target = await tx.user.findUnique({
+          where: { id: req.params.id },
+          select: { id: true, email: true, name: true, role: true },
+        });
+        if (!target) throw httpError(404, "User not found");
+        if (target.role === "admin") {
+          const adminCount = await tx.user.count({ where: { role: "admin" } });
+          if (adminCount <= 1) throw httpError(400, "Cannot delete the last admin");
+        }
+        // Identity snapshot keeps the row readable once the delete nulls targetUserId.
+        const actor = await tx.user.findUnique({
+          where: { id: actorId },
+          select: { email: true, name: true },
+        });
+        await tx.adminAuditLog.create({
+          data: {
+            adminId: actorId,
+            targetUserId: target.id,
+            action: "DELETE",
+            before: {
+              actor,
+              target: { email: target.email, name: target.name, role: target.role },
             },
-          });
-          await tx.user.delete({ where: { id: target.id } });
-        },
-        { isolationLevel: "Serializable" }
-      );
-      res.status(204).end();
-    } catch (err) {
-      if (err.code === "NOT_FOUND") return res.status(404).json({ error: err.message });
-      if (err.code === "LAST_ADMIN") return res.status(400).json({ error: err.message });
-      throw err;
-    }
+          },
+        });
+        await tx.user.delete({ where: { id: target.id } });
+      },
+      { isolationLevel: "Serializable" }
+    );
+    res.status(204).end();
   } catch (err) {
+    if (err.httpStatus) return res.status(err.httpStatus).json({ error: err.message });
     next(err);
   }
 });
