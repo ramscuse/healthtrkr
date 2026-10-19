@@ -1,3 +1,2 @@
-import app from "../server/app.js";
-
-export default app;
+// Vercel serverless entry (see vercel.json rewrites).
+export { default } from "../server/app.js";

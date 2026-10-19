@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { useUser } from "../context/UserContext.jsx";
 import {
@@ -30,26 +30,22 @@ import {
 const SELECT_CLASS =
   "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
 
-function formatDate(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+function ErrorAlert({ children }) {
+  return (
+    <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
+      <AlertDescription className="text-destructive">{children}</AlertDescription>
+    </Alert>
+  );
 }
 
 export default function Admin() {
   const { user: me } = useUser();
   const usersQuery = useAdminUsers();
-  const users = usersQuery.data || [];
-  const loading = usersQuery.isPending;
-  const listError = (usersQuery.error && usersQuery.error.message) || "";
-
+  const users = usersQuery.data ?? [];
   const [selectedId, setSelectedId] = useState(null);
 
-  const adminCount = useMemo(() => users.filter((u) => u.role === "admin").length, [users]);
-  const selected = useMemo(
-    () => users.find((u) => u.id === selectedId) || null,
-    [users, selectedId]
-  );
+  const adminCount = users.filter((u) => u.role === "admin").length;
+  const selected = users.find((u) => u.id === selectedId);
 
   return (
     <div className="space-y-6">
@@ -60,13 +56,9 @@ export default function Admin() {
         </span>
       </div>
 
-      {listError && (
-        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
-          <AlertDescription className="text-destructive">{listError}</AlertDescription>
-        </Alert>
-      )}
+      {usersQuery.error?.message && <ErrorAlert>{usersQuery.error.message}</ErrorAlert>}
 
-      {loading ? (
+      {usersQuery.isPending ? (
         <div className="space-y-2">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-16 rounded-xl" />
@@ -104,9 +96,9 @@ export default function Admin() {
                       </div>
                       <div className="text-xs text-muted-foreground truncate">{u.email}</div>
                       <div className="text-[11px] text-muted-foreground/80 mt-0.5">
-                        Joined {formatDate(u.createdAt)} · {u._count?.meals ?? 0} meals ·{" "}
-                        {u._count?.workouts ?? 0} workouts · {u._count?.waterEntries ?? 0} water ·{" "}
-                        {u._count?.healthData ?? 0} health
+                        Joined {new Date(u.createdAt).toLocaleDateString()} · {u._count.meals} meals
+                        · {u._count.workouts} workouts · {u._count.waterEntries} water ·{" "}
+                        {u._count.healthData} health
                       </div>
                     </div>
                   </button>
@@ -117,12 +109,7 @@ export default function Admin() {
         </Card>
       )}
 
-      <Sheet
-        open={!!selectedId}
-        onOpenChange={(open) => {
-          if (!open) setSelectedId(null);
-        }}
-      >
+      <Sheet open={!!selectedId} onOpenChange={(open) => !open && setSelectedId(null)}>
         <SheetContent className="w-full sm:max-w-[420px] p-0 gap-0">
           <SheetHeader className="border-b pr-12">
             <SheetTitle>Edit user</SheetTitle>
@@ -150,9 +137,9 @@ function EditorPanel({ target, isSelf, isLastAdmin, onDeleted }) {
   const deleteMutation = useDeleteUser();
 
   const [form, setForm] = useState({
-    name: target.name || "",
-    role: target.role || "user",
-    darkMode: !!target.darkMode,
+    name: target.name,
+    role: target.role,
+    darkMode: target.darkMode,
   });
   const [saveError, setSaveError] = useState("");
 
@@ -174,7 +161,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onDeleted }) {
     const trimmedName = form.name.trim();
     if (trimmedName !== target.name) patch.name = trimmedName;
     if (form.role !== target.role) patch.role = form.role;
-    if (form.darkMode !== !!target.darkMode) patch.darkMode = form.darkMode;
+    if (form.darkMode !== target.darkMode) patch.darkMode = form.darkMode;
 
     if (Object.keys(patch).length === 0) {
       toast.success("Already up to date");
@@ -227,11 +214,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onDeleted }) {
       <section className="space-y-4">
         <div className="text-xs font-semibold text-muted-foreground">{target.email}</div>
 
-        {saveError && (
-          <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
-            <AlertDescription className="text-destructive">{saveError}</AlertDescription>
-          </Alert>
-        )}
+        {saveError && <ErrorAlert>{saveError}</ErrorAlert>}
 
         <div className="space-y-1.5">
           <Label htmlFor="admin-name">Name</Label>
@@ -289,11 +272,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onDeleted }) {
       <section className="space-y-3 pt-6 border-t border-border">
         <h3 className="text-sm font-semibold">Reset password</h3>
 
-        {pwError && (
-          <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
-            <AlertDescription className="text-destructive">{pwError}</AlertDescription>
-          </Alert>
-        )}
+        {pwError && <ErrorAlert>{pwError}</ErrorAlert>}
 
         <form onSubmit={handleResetPassword} className="space-y-3">
           <div className="space-y-1.5">
@@ -325,11 +304,7 @@ function EditorPanel({ target, isSelf, isLastAdmin, onDeleted }) {
       {/* Delete */}
       <section className="pt-6 border-t border-border space-y-3">
         <h3 className="text-sm font-semibold">Danger zone</h3>
-        {deleteError && (
-          <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
-            <AlertDescription className="text-destructive">{deleteError}</AlertDescription>
-          </Alert>
-        )}
+        {deleteError && <ErrorAlert>{deleteError}</ErrorAlert>}
         <Button
           type="button"
           variant="destructive"

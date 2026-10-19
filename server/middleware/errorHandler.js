@@ -1,4 +1,5 @@
-export function errorHandler(err, req, res, next) {
+// Express 4 identifies error middleware by arity, so the 4th param must stay.
+export function errorHandler(err, req, res, _next) {
   if (process.env.NODE_ENV === "production") {
     console.error("[error]", {
       message: err.message,

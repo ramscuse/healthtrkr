@@ -7,15 +7,15 @@ import { cn } from "@/lib/utils";
 
 const baseNavItems = [
   { to: "/", label: "Dashboard", mobileLabel: "Home", Icon: Home },
-  { to: "/meals", label: "Meals", mobileLabel: "Meals", Icon: Utensils },
-  { to: "/workouts", label: "Workouts", mobileLabel: "Workouts", Icon: Dumbbell },
-  { to: "/water", label: "Water", mobileLabel: "Water", Icon: Droplet },
-  { to: "/progress", label: "Progress", mobileLabel: "Progress", Icon: BarChart3 },
+  { to: "/meals", label: "Meals", Icon: Utensils },
+  { to: "/workouts", label: "Workouts", Icon: Dumbbell },
+  { to: "/water", label: "Water", Icon: Droplet },
+  { to: "/progress", label: "Progress", Icon: BarChart3 },
 ];
 
-const adminNavItem = { to: "/admin", label: "Admin", mobileLabel: "Admin", Icon: Shield };
+const adminNavItem = { to: "/admin", label: "Admin", Icon: Shield };
+const accountNavItem = { to: "/account", label: "Account", Icon: User };
 
-// Active = solid violet pill; inactive = muted sidebar foreground with a subtle hover.
 const navItemClass = ({ isActive }) =>
   cn(
     "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors",
@@ -29,12 +29,7 @@ export default function Layout({ children }) {
   const queryClient = useQueryClient();
   const { user } = useUser();
 
-  const isAdmin = user?.role === "admin";
-  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
-  const mobileNavItems = [
-    ...navItems,
-    { to: "/account", label: "Account", mobileLabel: "Account", Icon: User },
-  ];
+  const navItems = user?.role === "admin" ? [...baseNavItems, adminNavItem] : baseNavItems;
 
   async function handleLogout() {
     try {
@@ -72,7 +67,7 @@ export default function Layout({ children }) {
           </NavLink>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+            className={cn("w-full", navItemClass({ isActive: false }))}
           >
             <LogOut className="size-4 shrink-0" />
             Log out
@@ -87,7 +82,7 @@ export default function Layout({ children }) {
 
       {/* Bottom tab bar — mobile only */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-background border-t border-border flex pb-[env(safe-area-inset-bottom)]">
-        {mobileNavItems.map(({ to, mobileLabel, Icon }) => (
+        {[...navItems, accountNavItem].map(({ to, label, mobileLabel = label, Icon }) => (
           <NavLink
             key={to}
             to={to}

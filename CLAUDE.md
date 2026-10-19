@@ -18,9 +18,8 @@ npm start             # NODE_ENV=production node server/index.js
 
 # Database
 npm run db:migrate    # prisma migrate dev
-npm run db:seed       # seed initial data
-npm run db:seed-foods # seed food database
 npm run db:studio     # Prisma Studio GUI
+npm run db:reset-password  # CLI password reset for a user
 ```
 
 No test suite exists in this project.
@@ -60,27 +59,32 @@ Do not commit directly to `main`. Do not push until the code review step is comp
 **Full-stack monorepo**: Express backend + React/Vite frontend in one repo.
 
 ```
-server/index.js       — Express bootstrap and route mounting
-server/middleware/     — auth.js (JWT verify), errorHandler.js
-api/                  — one file per domain (auth, meals, workouts, health, goals, progress, water, account)
+server/app.js         — Express app: middleware + route mounting
+server/index.js       — boot (prod env validation, listen, graceful shutdown)
+api/index.js          — Vercel entry (re-exports server/app.js)
+server/routes/        — one file per domain (auth, account, admin, meals, workouts, health, goals, progress, water)
+server/middleware/    — auth.js (JWT sign/verify, requireAdmin), errorHandler.js, limits.js (rate limiters)
+server/lib/           — dates.js (parseDate, dayRange), passwordPolicy.js
+server/fatSecret.js   — FatSecret OAuth 1.0a client
 lib/prisma.js         — shared singleton PrismaClient (all routes import from here)
 db/schema.prisma      — Prisma schema (schema path set in package.json → "prisma.schema")
 src/                  — React frontend (Vite root)
 src/lib/api.js        — all fetch calls to backend (single request() wrapper)
-src/lib/queryClient.js — TanStack Query client singleton + default options
+src/lib/queryClient.js — TanStack Query client singleton + useInvalidatingMutation helper
+src/lib/utils.js      — cn (class merge), ymd (local-time YYYY-MM-DD)
 src/hooks/            — TanStack Query hooks, one file per domain (useMeals, useWater, etc.) + queryKeys.js factory
 src/context/          — ThemeContext (dark mode, persisted to DB via /api/account)
-src/pages/            — Dashboard, Meals, Workouts, Progress, Water, Account, Auth
-src/components/       — Layout (nav shell), ProtectedRoute, StatCard
+src/pages/            — Dashboard, Meals, Workouts, Progress, Water, Account, Auth, Admin
+src/components/       — Layout (nav shell), ProtectedRoute (+ AdminRoute), ui/ (shadcn)
 ```
 
 **Module system**: `"type": "module"` — all files use ESM (`import`/`export`), no `require()`.
 
 ## Key Architectural Decisions
 
-### Route Mounting Order in server/index.js
+### Route Mounting Order in server/app.js
 
-`/api/workouts/template` is mounted **before** the auth middleware and the main workouts router — it's intentionally public (no JWT required). The handler is exported as `workoutsTemplateHandler` from `api/workouts.js` and mounted explicitly:
+`/api/workouts/template` is mounted **before** the auth middleware and the main workouts router — it's intentionally public (no JWT required). The handler is exported as `workoutsTemplateHandler` from `server/routes/workouts.js` and mounted explicitly:
 
 ```js
 app.get("/api/workouts/template", workoutsTemplateHandler); // public
@@ -101,8 +105,9 @@ app.use("/api/workouts", authMiddleware, workoutsRouter); // protected
 
 - Pages and components never call `src/lib/api.js` directly for server data. Instead, they import hooks from `src/hooks/use<Domain>.js` (`useMeals`, `useWorkouts`, `useWater`, `useGoals`, `useAccount`, `useHealth`, `useProgress`, `useAdmin`).
 - Query keys are produced exclusively by the factories in `src/hooks/queryKeys.js`. Mutations invalidate via those same factories — never hand-write a key.
-- Within meals and workouts, daily-write entries live under a `diary` sub-prefix so that `useAddMeal` / `useLogWorkout` invalidations do **not** sweep the rate-limited FatSecret search cache or the static workout template (`staleTime: Infinity`).
+- Within meals and workouts, daily-write entries live under a `diary` sub-prefix so that `useAddMeal` / `useLogWorkout` invalidations do **not** sweep the rate-limited FatSecret search cache.
 - Mutations that affect aggregate progress data (meals, water, workouts, active calories) **must** invalidate `queryKeys.progress.all` so the Progress page recomputes.
+- Mutation hooks are one-liners over `useInvalidatingMutation(mutationFn, keys)` from `src/lib/queryClient.js`; `keys` is an array of query-key factories' output, or a function of the mutation variables.
 - Mutations that mutate `data` instead of full positional args destructure inside `mutationFn` (e.g. `useUpdateActiveCalories` accepts `{ date, calories }`, `useUpdateUser` accepts `{ id, patch }`). Match that convention when adding new mutations.
 - Intentional exceptions where direct `src/lib/api.js` calls are kept:
   - `Auth.jsx` (login/register/forgot/reset), `Layout.jsx` and `Account.jsx` (logout), `Account.jsx` (changePassword) — one-shot navigation flows.
@@ -139,7 +144,7 @@ In production, Express serves `src/dist/` as static files and catches all non-`/
   (calories indigo, protein violet, etc.). `Dashboard.jsx` is included because it aggregates those
   same domains (calorie/protein goal status, water, workout-logged), so it inherits their semantic
   palette. Everywhere else, chrome must use tokens (no raw `gray`/`white`/`indigo`).
-- **Toasts:** Sonner. `import { toast } from 'sonner'`; one `<Toaster />` + `<TooltipProvider>` are
+- **Toasts:** Sonner. `import { toast } from 'sonner'`; one `<Toaster />` is
   mounted at the app root in `App.jsx` (inside `ThemeProvider`). Use toasts for mutation success;
   keep validation errors inline.
 - **Slide-overs → `Sheet`, modals → `Dialog`, confirms → `AlertDialog`** (e.g. Admin's
@@ -151,7 +156,7 @@ In production, Express serves `src/dist/` as static files and catches all non-`/
 
 All API routes validate inputs using these patterns:
 
-- **Dates**: `/^\d{4}-\d{2}-\d{2}$/` regex + `new Date()` validity check
+- **Dates**: `parseDate()` from `server/lib/dates.js` (YYYY-MM-DD regex + round-trip check, rejects impossible dates like `2024-02-31`); `dayRange()` for start/end-of-day queries
 - **Numeric fields**: `typeof val === 'number' && isFinite(val)`
 - **Enum fields**: validated against explicit allowlists (e.g., `mealType` against `['breakfast','lunch','dinner','snack']`)
 - **Barcode**: `encodeURIComponent` + `/^\d{8,14}$/` regex

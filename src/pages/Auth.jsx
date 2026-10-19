@@ -33,6 +33,35 @@ function ErrorAlert({ children }) {
   );
 }
 
+// Card with a title/description header around a form (forgot + reset views).
+function FormCard({ title, description, onSubmit, error, children }) {
+  return (
+    <AuthShell>
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-4">
+            {error && <ErrorAlert>{error}</ErrorAlert>}
+            {children}
+          </form>
+        </CardContent>
+      </Card>
+    </AuthShell>
+  );
+}
+
+function Field({ id, label, ...inputProps }) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} required className="h-10" {...inputProps} />
+    </div>
+  );
+}
+
 // view: 'login' | 'register' | 'forgot' | 'reset'
 export default function Auth() {
   const navigate = useNavigate();
@@ -57,11 +86,26 @@ export default function Auth() {
     setNewPassword("");
   }
 
-  async function handleSubmit(e) {
+  function goToForgot() {
+    setError("");
+    setView("forgot");
+  }
+
+  async function submit(e, action, fallbackError = "Something went wrong. Please try again.") {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
+      await action();
+    } catch (err) {
+      setError(err.message || fallbackError);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleSubmit = (e) =>
+    submit(e, async () => {
       if (view === "login") {
         await login(email, password, rememberMe);
       } else {
@@ -69,167 +113,105 @@ export default function Auth() {
       }
       await refreshUser();
       navigate("/");
-    } catch (err) {
-      setError(err.message || "Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
+    });
 
-  async function handleForgot(e) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
+  const handleForgot = (e) =>
+    submit(e, async () => {
       await forgotPassword(email);
       toast.success("Check your email — a 6-digit code is on its way.");
       setView("reset");
-    } catch (err) {
-      setError(err.message || "Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
+    });
 
-  async function handleReset(e) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      await resetPassword(email, code.trim(), newPassword);
-      toast.success("Password reset! You can now log in.");
-      switchTab("login");
-    } catch (err) {
-      setError(err.message || "Invalid or expired code.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const handleReset = (e) =>
+    submit(
+      e,
+      async () => {
+        await resetPassword(email, code.trim(), newPassword);
+        toast.success("Password reset! You can now log in.");
+        switchTab("login");
+      },
+      "Invalid or expired code."
+    );
 
-  // ── Forgot Password view ─────────────────────────────────────────────────
+  const emailProps = {
+    type: "email",
+    autoComplete: "email",
+    value: email,
+    onChange: (e) => setEmail(e.target.value),
+    placeholder: "you@example.com",
+  };
+
   if (view === "forgot") {
     return (
-      <AuthShell>
-        <Card>
-          <CardHeader>
-            <CardTitle>Reset your password</CardTitle>
-            <CardDescription>Enter your email and we'll send you a 6-digit code.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleForgot} className="space-y-4">
-              {error && <ErrorAlert>{error}</ErrorAlert>}
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="you@example.com"
-                  className="h-10"
-                />
-              </div>
-              <Button type="submit" disabled={loading} className="w-full h-10">
-                {loading ? "Sending…" : "Send Code"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => switchTab("login")}
-                className="w-full"
-              >
-                Back to Log In
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </AuthShell>
+      <FormCard
+        title="Reset your password"
+        description="Enter your email and we'll send you a 6-digit code."
+        onSubmit={handleForgot}
+        error={error}
+      >
+        <Field id="email" label="Email" {...emailProps} />
+        <Button type="submit" disabled={loading} className="w-full h-10">
+          {loading ? "Sending…" : "Send Code"}
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => switchTab("login")} className="w-full">
+          Back to Log In
+        </Button>
+      </FormCard>
     );
   }
 
-  // ── Reset Password view ──────────────────────────────────────────────────
   if (view === "reset") {
     return (
-      <AuthShell>
-        <Card>
-          <CardHeader>
-            <CardTitle>Enter your reset code</CardTitle>
-            <CardDescription>Check your email for a 6-digit code.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleReset} className="space-y-4">
-              {error && <ErrorAlert>{error}</ErrorAlert>}
-              <div className="space-y-1.5">
-                <Label htmlFor="reset-email">Email</Label>
-                <Input
-                  id="reset-email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="you@example.com"
-                  className="h-10"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="code">6-digit code</Label>
-                <Input
-                  id="code"
-                  type="text"
-                  inputMode="numeric"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  required
-                  placeholder="123456"
-                  className="h-10 text-center font-mono tracking-widest"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="new-password">New password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  placeholder="Min 6 characters"
-                  className="h-10"
-                />
-              </div>
-              <Button type="submit" disabled={loading || code.length !== 6} className="w-full h-10">
-                {loading ? "Resetting…" : "Reset Password"}
-              </Button>
-              <div className="flex justify-between text-sm">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError("");
-                    setView("forgot");
-                  }}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Resend code
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchTab("login")}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Back to Log In
-                </button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </AuthShell>
+      <FormCard
+        title="Enter your reset code"
+        description="Check your email for a 6-digit code."
+        onSubmit={handleReset}
+        error={error}
+      >
+        <Field id="reset-email" label="Email" {...emailProps} />
+        <Field
+          id="code"
+          label="6-digit code"
+          type="text"
+          inputMode="numeric"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          placeholder="123456"
+          className="h-10 text-center font-mono tracking-widest"
+        />
+        <Field
+          id="new-password"
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="Min 6 characters"
+        />
+        <Button type="submit" disabled={loading || code.length !== 6} className="w-full h-10">
+          {loading ? "Resetting…" : "Reset Password"}
+        </Button>
+        <div className="flex justify-between text-sm">
+          <button
+            type="button"
+            onClick={goToForgot}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Resend code
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("login")}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Back to Log In
+          </button>
+        </div>
+      </FormCard>
     );
   }
 
-  // ── Login / Register view ────────────────────────────────────────────────
+  // Login / Register
   return (
     <AuthShell>
       <Card>
@@ -249,36 +231,19 @@ export default function Auth() {
             {error && <ErrorAlert>{error}</ErrorAlert>}
 
             {view === "register" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  type="text"
-                  autoComplete="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  placeholder="Your name"
-                  className="h-10"
-                />
-              </div>
+              <Field
+                id="name"
+                label="Name"
+                name="name"
+                type="text"
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+              />
             )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="you@example.com"
-                className="h-10"
-              />
-            </div>
+            <Field id="email" label="Email" name="email" {...emailProps} />
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -286,10 +251,7 @@ export default function Auth() {
                 {view === "login" && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setError("");
-                      setView("forgot");
-                    }}
+                    onClick={goToForgot}
                     className="text-xs text-primary hover:underline"
                   >
                     Forgot password?

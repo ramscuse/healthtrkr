@@ -1,30 +1,18 @@
 import { Router } from "express";
 import prisma from "../../lib/prisma.js";
+import { parseDate, dayRange } from "../lib/dates.js";
 
 const router = Router();
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 const VALID_CATEGORIES = ["Upper Body Push", "Upper Body Pull", "Lower Body", "Core", "Cardio"];
-
-function parseDate(dateStr) {
-  if (!DATE_RE.test(dateStr)) return null;
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-const VALID_SPLIT_DAYS = ["upper_push", "lower_core", "upper_pull", "lower", "cardio"];
 
 const MAX_EXERCISES = 50;
 const MAX_EXERCISE_NAME_LEN = 200;
 const MAX_SETS_PER_EXERCISE = 30;
 const MAX_NOTES_LEN = 2000;
 
-// Validates the shape of an exercises[] entry. The frontend submits
-// { id, name, category, muscles } — we accept that and also tolerate the
-// older { name, defaultSets, defaultReps } template shape for compatibility.
-// Returns an error string or null. Bias is shape sanity + size cap, not
-// prescriptive field policing.
+// Shape sanity + size caps for one exercises[] entry (frontend sends
+// { id, name, category, muscles, sets? }). Returns an error string or null.
 function validateExercise(ex, idx) {
   if (!ex || typeof ex !== "object" || Array.isArray(ex)) {
     return `exercises[${idx}] must be an object`;
@@ -38,10 +26,8 @@ function validateExercise(ex, idx) {
   if (ex.muscles !== undefined && !Array.isArray(ex.muscles)) {
     return `exercises[${idx}].muscles must be an array if provided`;
   }
-  // Cap nested sets[] so the outer 50-exercise limit + 100KB body limit aren't
-  // the only ceiling on payload size — a single exercise with thousands of
-  // sets would otherwise still fit under both. `sets: null` is rejected too:
-  // contract is "absent or array", not "absent, null, or array".
+  // Cap nested sets[] too, or one exercise could carry thousands of sets
+  // under the 100KB body limit. `sets: null` is rejected: absent or array only.
   if (ex.sets !== undefined) {
     if (!Array.isArray(ex.sets)) {
       return `exercises[${idx}].sets must be an array if provided`;
@@ -53,7 +39,14 @@ function validateExercise(ex, idx) {
   return null;
 }
 
-function validateWorkoutPayload({ exercises, notes }) {
+// Optional fields shared by POST and PUT. Returns an error string or null.
+function validateWorkoutPayload({ splitDay, exercises, durationMin, notes }) {
+  if (splitDay !== undefined && !isValidSplitDay(splitDay)) {
+    return `splitDay must be "custom" or "+"-joined values from: ${[...SPLIT_PARTS].join(", ")}`;
+  }
+  if (durationMin !== undefined && (!Number.isInteger(durationMin) || durationMin < 0)) {
+    return "durationMin must be a non-negative integer";
+  }
   if (exercises !== undefined) {
     if (!Array.isArray(exercises)) return "exercises must be an array";
     if (exercises.length > MAX_EXERCISES) {
@@ -70,6 +63,12 @@ function validateWorkoutPayload({ exercises, notes }) {
       return `notes must be ${MAX_NOTES_LEN} chars or less`;
     }
   }
+  return null;
+}
+
+function validatePreset({ name, exercises }) {
+  if (typeof name !== "string" || !name.trim()) return "name is required";
+  if (!Array.isArray(exercises)) return "exercises must be an array";
   return null;
 }
 
@@ -136,11 +135,21 @@ const TEMPLATE = {
   ],
 };
 
+// Legacy template keys + the category slugs the client sends: one slug, "custom"
+// (multi-category plan), or "+"-joined slugs (quick log).
+const SPLIT_PARTS = new Set([
+  ...TEMPLATE.split.map((s) => s.key),
+  ...VALID_CATEGORIES.map((c) => c.toLowerCase().replace(/ /g, "_")),
+]);
+const isValidSplitDay = (s) =>
+  typeof s === "string" &&
+  s.length <= 200 &&
+  (s === "custom" || s.split("+").every((part) => SPLIT_PARTS.has(part)));
+
+// Mounted publicly in app.js, ahead of the authed workouts router.
 export function workoutsTemplateHandler(req, res) {
   res.json(TEMPLATE);
 }
-
-router.get("/template", workoutsTemplateHandler);
 
 router.get("/custom-exercises", async (req, res, next) => {
   try {
@@ -159,7 +168,7 @@ router.post("/custom-exercises", async (req, res, next) => {
   try {
     const { userId } = req.user;
     const { name, category, muscles } = req.body;
-    if (!name || typeof name !== "string" || !name.trim())
+    if (typeof name !== "string" || !name.trim())
       return res.status(400).json({ error: "name is required" });
     if (!VALID_CATEGORIES.includes(category))
       return res.status(400).json({ error: "invalid category" });
@@ -205,10 +214,8 @@ router.post("/presets", async (req, res, next) => {
   try {
     const { userId } = req.user;
     const { name, exercises } = req.body;
-    if (!name || typeof name !== "string" || !name.trim())
-      return res.status(400).json({ error: "name is required" });
-    if (!Array.isArray(exercises))
-      return res.status(400).json({ error: "exercises must be an array" });
+    const presetError = validatePreset(req.body);
+    if (presetError) return res.status(400).json({ error: presetError });
     const preset = await prisma.workoutPreset.create({
       data: { userId, name: name.trim(), exercises },
     });
@@ -227,10 +234,8 @@ router.put("/presets/:id", async (req, res, next) => {
     const existing = await prisma.workoutPreset.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Not found" });
     if (existing.userId !== userId) return res.status(403).json({ error: "Not authorized" });
-    if (!name || typeof name !== "string" || !name.trim())
-      return res.status(400).json({ error: "name is required" });
-    if (!Array.isArray(exercises))
-      return res.status(400).json({ error: "exercises must be an array" });
+    const presetError = validatePreset(req.body);
+    if (presetError) return res.status(400).json({ error: presetError });
     const preset = await prisma.workoutPreset.update({
       where: { id: req.params.id },
       data: { name: name.trim(), exercises },
@@ -282,13 +287,8 @@ router.get("/", async (req, res, next) => {
     const parsedDate = parseDate(date);
     if (!parsedDate) return res.status(400).json({ error: "date must be in YYYY-MM-DD format" });
 
-    const start = new Date(parsedDate);
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(parsedDate);
-    end.setUTCHours(23, 59, 59, 999);
-
     const sessions = await prisma.workoutSession.findMany({
-      where: { userId, date: { gte: start, lte: end } },
+      where: { userId, date: dayRange(parsedDate) },
     });
 
     res.json(sessions);
@@ -305,17 +305,9 @@ router.post("/", async (req, res, next) => {
     if (!date || !splitDay || !exercises) {
       return res.status(400).json({ error: "date, splitDay, and exercises are required" });
     }
-    if (!VALID_SPLIT_DAYS.includes(splitDay)) {
-      return res
-        .status(400)
-        .json({ error: `splitDay must be one of: ${VALID_SPLIT_DAYS.join(", ")}` });
-    }
     const parsedDate = parseDate(date);
     if (!parsedDate) return res.status(400).json({ error: "date must be in YYYY-MM-DD format" });
-    if (durationMin !== undefined && (!Number.isInteger(durationMin) || durationMin < 0)) {
-      return res.status(400).json({ error: "durationMin must be a non-negative integer" });
-    }
-    const payloadError = validateWorkoutPayload({ exercises, notes });
+    const payloadError = validateWorkoutPayload({ splitDay, exercises, durationMin, notes });
     if (payloadError) return res.status(400).json({ error: payloadError });
 
     const session = await prisma.workoutSession.create({
@@ -338,16 +330,7 @@ router.put("/:id", async (req, res, next) => {
     if (existing.userId !== userId) return res.status(403).json({ error: "Not authorized" });
 
     const { splitDay, exercises, durationMin, notes } = req.body;
-
-    if (splitDay !== undefined && !VALID_SPLIT_DAYS.includes(splitDay)) {
-      return res
-        .status(400)
-        .json({ error: `splitDay must be one of: ${VALID_SPLIT_DAYS.join(", ")}` });
-    }
-    if (durationMin !== undefined && (!Number.isInteger(durationMin) || durationMin < 0)) {
-      return res.status(400).json({ error: "durationMin must be a non-negative integer" });
-    }
-    const payloadError = validateWorkoutPayload({ exercises, notes });
+    const payloadError = validateWorkoutPayload({ splitDay, exercises, durationMin, notes });
     if (payloadError) return res.status(400).json({ error: payloadError });
 
     const session = await prisma.workoutSession.update({

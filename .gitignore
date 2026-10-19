@@ -4,7 +4,6 @@ dist/
 src/dist/
 *.log
 .DS_Store
-data/foods.json
 .claude/
 docker-compose.override.yml
 .vercel

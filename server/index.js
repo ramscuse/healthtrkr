@@ -19,16 +19,11 @@ const server = app.listen(PORT, () => {
 });
 
 // Graceful shutdown: finish in-flight requests, then disconnect Prisma
-process.on("SIGTERM", () => {
-  server.close(async () => {
-    await prisma.$disconnect();
-    process.exit(0);
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.on(signal, () => {
+    server.close(async () => {
+      await prisma.$disconnect();
+      process.exit(0);
+    });
   });
-});
-
-process.on("SIGINT", () => {
-  server.close(async () => {
-    await prisma.$disconnect();
-    process.exit(0);
-  });
-});
+}

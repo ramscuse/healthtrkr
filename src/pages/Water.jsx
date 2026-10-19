@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import { useWaterEntries, useLogWater, useDeleteWaterEntry } from "../hooks/useWater.js";
@@ -7,21 +7,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ymd } from "@/lib/utils";
 
 const PRESETS = [8, 12, 16, 20, 32];
 
-function getTodayString() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function formatTime(isoStr) {
-  if (!isoStr) return "";
-  return new Date(isoStr).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
-
 export default function Water() {
-  const today = getTodayString();
+  const today = ymd();
   const [selectedDate, setSelectedDate] = useState(today);
   const [customAmt, setCustomAmt] = useState("");
   const [addClientError, setAddClientError] = useState("");
@@ -36,8 +27,7 @@ export default function Water() {
   const deleteWaterMutation = useDeleteWaterEntry();
   const updateGoalsMutation = useUpdateGoals();
 
-  const entries = Array.isArray(entriesQuery.data) ? entriesQuery.data : [];
-  const loading = entriesQuery.isPending;
+  const entries = entriesQuery.data ?? [];
   const entriesQueryError = entriesQuery.isError
     ? entriesQuery.error?.message || "Failed to load water entries."
     : null;
@@ -48,26 +38,13 @@ export default function Water() {
   const cups = (total / 8).toFixed(1);
   const waterGoal = goalsQuery.data?.waterGoal ?? null;
 
-  // Sync the goal-editor input with the loaded goal (once it arrives, and
-  // again whenever the persisted value changes from elsewhere). Skip while
-  // the editor is open so a background refetch can't clobber the draft.
-  useEffect(() => {
-    if (goalEditing) return;
-    setGoalInput(waterGoal ?? "");
-  }, [waterGoal, goalEditing]);
-
   const adding = logWaterMutation.isPending;
   const goalSaving = updateGoalsMutation.isPending;
   const addError =
-    addClientError ||
-    (logWaterMutation.error && logWaterMutation.error.message) ||
-    (deleteWaterMutation.error && deleteWaterMutation.error.message) ||
-    "";
-  const goalError =
-    goalClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || "";
+    addClientError || logWaterMutation.error?.message || deleteWaterMutation.error?.message;
+  const goalError = goalClientError || updateGoalsMutation.error?.message;
 
   function handleAdd(amount) {
-    if (!amount || amount <= 0) return;
     setAddClientError("");
     logWaterMutation.mutate(
       { date: selectedDate, amount },
@@ -134,7 +111,10 @@ export default function Water() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setGoalEditing(true)}
+                  onClick={() => {
+                    setGoalInput(waterGoal ?? "");
+                    setGoalEditing(true);
+                  }}
                   className="text-xs font-semibold text-sky-500 hover:underline"
                 >
                   {waterGoal ? `Goal: ${waterGoal} oz` : "Set goal"}
@@ -163,7 +143,6 @@ export default function Water() {
                   variant="ghost"
                   onClick={() => {
                     setGoalEditing(false);
-                    setGoalInput(waterGoal ?? "");
                     setGoalClientError("");
                   }}
                 >
@@ -179,7 +158,7 @@ export default function Water() {
               oz &nbsp;·&nbsp; {cups} cups
             </p>
           </div>
-          {waterGoal && waterGoal > 0 && (
+          {waterGoal > 0 && (
             <div>
               <div className="flex justify-between text-xs text-sky-500 mb-1">
                 <span>{Math.round((total / waterGoal) * 100)}% of goal</span>
@@ -243,7 +222,7 @@ export default function Water() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           {selectedDate === today ? "Today's Log" : `Log — ${selectedDate}`}
         </h2>
-        {loading ? (
+        {entriesQuery.isPending ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-12 rounded-xl" />
@@ -269,7 +248,10 @@ export default function Water() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      {formatTime(entry.createdAt)}
+                      {new Date(entry.createdAt).toLocaleTimeString("en-US", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
                     </span>
                     <Button
                       type="button"

@@ -10,10 +10,20 @@ import Account from "./pages/Account.jsx";
 import Admin from "./pages/Admin.jsx";
 import Layout from "./components/Layout.jsx";
 import ProtectedRoute, { AdminRoute } from "./components/ProtectedRoute.jsx";
-import { TooltipProvider } from "./components/ui/tooltip.jsx";
 import { Toaster } from "./components/ui/sonner.jsx";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { Analytics } from "@vercel/analytics/react";
+
+// Flat routes on purpose: each gets its own <ProtectedRoute> element, so the
+// session check re-runs on every navigation (a shared layout route would not).
+const PAGES = {
+  "/": Dashboard,
+  "/meals": Meals,
+  "/workouts": Workouts,
+  "/water": Water,
+  "/progress": Progress,
+  "/account": Account,
+};
 
 export default function App() {
   return (
@@ -21,91 +31,34 @@ export default function App() {
       <SpeedInsights />
       <Analytics />
       <ThemeProvider>
-        <TooltipProvider>
-          <Routes>
-            <Route path="/login" element={<Auth />} />
-
+        <Routes>
+          <Route path="/login" element={<Auth />} />
+          {Object.entries(PAGES).map(([path, Page]) => (
             <Route
-              path="/"
+              key={path}
+              path={path}
               element={
                 <ProtectedRoute>
                   <Layout>
-                    <Dashboard />
+                    <Page />
                   </Layout>
                 </ProtectedRoute>
               }
             />
-
-            <Route
-              path="/meals"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Meals />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/workouts"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Workouts />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/water"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Water />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/progress"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Progress />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/account"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Account />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/admin"
-              element={
-                <AdminRoute>
-                  <Layout>
-                    <Admin />
-                  </Layout>
-                </AdminRoute>
-              }
-            />
-
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-          <Toaster />
-        </TooltipProvider>
+          ))}
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <Layout>
+                  <Admin />
+                </Layout>
+              </AdminRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+        <Toaster />
       </ThemeProvider>
     </>
   );

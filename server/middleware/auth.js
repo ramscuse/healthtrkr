@@ -1,17 +1,15 @@
 import jwt from "jsonwebtoken";
 import prisma from "../../lib/prisma.js";
 
-export const JWT_VERIFY_OPTIONS = {
-  algorithms: ["HS256"],
-  issuer: "healthtrkr",
-  audience: "healthtrkr-web",
-};
+const JWT_CLAIMS = { issuer: "healthtrkr", audience: "healthtrkr-web" };
 
-export const JWT_SIGN_OPTIONS = {
-  algorithm: "HS256",
-  issuer: "healthtrkr",
-  audience: "healthtrkr-web",
-};
+// No `exp`: revocation is server-side via User.tokenVersion (see authMiddleware).
+export function signToken(user) {
+  return jwt.sign({ userId: user.id, tokenVersion: user.tokenVersion }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    ...JWT_CLAIMS,
+  });
+}
 
 export async function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
@@ -23,15 +21,13 @@ export async function authMiddleware(req, res, next) {
 
   let payload;
   try {
-    payload = jwt.verify(token, process.env.JWT_SECRET, JWT_VERIFY_OPTIONS);
+    payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"], ...JWT_CLAIMS });
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 
-  // Reject malformed-but-signature-valid payloads (e.g. tokens minted by an
-  // adjacent service sharing the secret). Guarding the types up front means
-  // a missing userId doesn't blow up `findUnique({ where: { id: undefined } })`
-  // into a Prisma validation error / 500.
+  // Reject signature-valid but malformed payloads before they reach Prisma
+  // (an undefined userId would surface as a 500, not a 401).
   if (
     typeof payload.userId !== "string" ||
     !Number.isInteger(payload.tokenVersion) ||
@@ -40,9 +36,8 @@ export async function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 
-  // Revocation check: every mutating action (logout, password change, reset,
-  // admin-set-password) bumps User.tokenVersion. A token whose version no
-  // longer matches the user's current version is dead, regardless of `exp`.
+  // Revocation check: logout, password change/reset and admin-set-password
+  // bump User.tokenVersion, killing every token minted before.
   try {
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
@@ -58,18 +53,17 @@ export async function authMiddleware(req, res, next) {
   }
 }
 
-// Per-request role lookup. The JWT intentionally does NOT carry role — a
-// demoted admin would otherwise keep admin powers until their token expires.
+// Role is looked up per request, not carried in the JWT, so a demotion takes
+// effect immediately.
 export async function requireAdmin(req, res, next) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       select: { role: true },
     });
-    if (!user || user.role !== "admin") {
+    if (user?.role !== "admin") {
       return res.status(403).json({ error: "Admin access required" });
     }
-    req.user.role = user.role;
     next();
   } catch (err) {
     next(err);

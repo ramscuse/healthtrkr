@@ -26,18 +26,11 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, ymd } from "@/lib/utils";
 
-function getTodayString() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function formatDateDisplay(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("en-US", {
+// Session dates are stored as UTC midnight, so format in UTC to avoid an off-by-one day.
+function formatDateDisplay(iso) {
+  return new Date(iso).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -46,11 +39,23 @@ function formatDateDisplay(dateStr) {
 }
 
 function toHumanLabel(splitDay) {
-  if (!splitDay) return "Workout";
   return splitDay
     .replace(/_/g, " ")
     .replace(/\+/g, " + ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const truncate = (str, max) => (str.length > max ? str.slice(0, max) + "…" : str);
+const slug = (cat) => cat.toLowerCase().replace(/ /g, "_");
+// Strip UI-only fields (isCustom, custom-exercise row metadata) before saving.
+const toPayload = (list) =>
+  list.map(({ id, name, category, muscles }) => ({ id, name, category, muscles }));
+const toggleById = (list, item) =>
+  list.some((e) => e.id === item.id) ? list.filter((e) => e.id !== item.id) : [...list, item];
+function toggleInSet(set, value) {
+  const next = new Set(set);
+  next.has(value) ? next.delete(value) : next.add(value);
+  return next;
 }
 
 // Per-category color coding (semantic — distinguishes muscle-group categories).
@@ -87,51 +92,70 @@ const CATEGORY_COLORS = {
   },
 };
 
-function truncate(str, max) {
-  if (!str) return "";
-  return str.length > max ? str.slice(0, max) + "…" : str;
+// Preset exercises are free-form JSON, so an unknown category falls back to muted.
+function CategoryDot({ category, className = "size-2" }) {
+  return (
+    <span
+      className={cn(
+        className,
+        "rounded-full shrink-0",
+        CATEGORY_COLORS[category]?.dot || "bg-muted-foreground"
+      )}
+    />
+  );
+}
+
+function CategoryTabs({ value, onChange, className, tabClassName }) {
+  return (
+    <div className={cn("flex border-b border-border overflow-x-auto", className)}>
+      {["All", ...CATEGORIES].map((cat) => (
+        <button
+          key={cat}
+          type="button"
+          onClick={() => onChange(cat)}
+          className={cn(
+            tabClassName,
+            "font-medium whitespace-nowrap border-b-2 -mb-px transition-colors",
+            value !== cat
+              ? "border-transparent text-muted-foreground hover:text-foreground"
+              : cat === "All"
+                ? "border-primary text-primary"
+                : CATEGORY_COLORS[cat].tab
+          )}
+        >
+          {cat}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const EMPTY_EX_FORM = { name: "", category: "Upper Body Push", muscles: "" };
 
-const SELECT_CLASS =
-  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
-
 export default function Workouts() {
-  const today = getTodayString();
+  const today = ymd();
   const [selectedDate, setSelectedDate] = useState(today);
 
-  // Plan (local)
   const [plan, setPlan] = useState([]);
-  const [saveClientError, setSaveClientError] = useState("");
-
-  // Save plan as preset (local)
   const [saveAsPreset, setSaveAsPreset] = useState(false);
   const [saveAsPresetName, setSaveAsPresetName] = useState("");
   const [saveAsPresetClientErr, setSaveAsPresetClientErr] = useState("");
 
-  // Library (local)
   const [activeCategory, setActiveCategory] = useState("All");
 
-  // Panel (local)
   const [panelMode, setPanelMode] = useState(null); // null | 'presets' | 'new-preset' | 'new-exercise'
   const [editingPreset, setEditingPreset] = useState(null);
 
-  // New exercise form (local)
   const [exForm, setExForm] = useState(EMPTY_EX_FORM);
   const [exClientError, setExClientError] = useState("");
 
-  // New/Edit preset form (local)
   const [presetName, setPresetName] = useState("");
   const [presetPlan, setPresetPlan] = useState([]);
   const [presetCategory, setPresetCategory] = useState("All");
   const [presetClientError, setPresetClientError] = useState("");
 
-  // Quick log (local)
   const [quickCategories, setQuickCategories] = useState(new Set());
-  const [quickClientError, setQuickClientError] = useState("");
 
-  // Generator (local)
   const [showGenerator, setShowGenerator] = useState(false);
   const [genEnabled, setGenEnabled] = useState(new Set());
   const [genCounts, setGenCounts] = useState({
@@ -142,14 +166,11 @@ export default function Workouts() {
     Cardio: 1,
   });
 
-  // ── Hooks: reads ──
   const historyQuery = useWorkoutHistory(20);
   const customExercisesQuery = useCustomExercises();
   const presetsQuery = useWorkoutPresets();
 
-  // ── Hooks: mutations ──
-  // Separate useLogWorkout instances for plan-save vs quick-log so their
-  // isPending / error states don't collide.
+  // Separate instances per form so their isPending / error states don't collide.
   const logWorkoutMutation = useLogWorkout();
   const quickLogMutation = useLogWorkout();
   const createCustomExerciseMutation = useCreateCustomExercise();
@@ -157,162 +178,94 @@ export default function Workouts() {
   const createWorkoutPresetMutation = useCreateWorkoutPreset();
   const updateWorkoutPresetMutation = useUpdateWorkoutPreset();
   const deleteWorkoutPresetMutation = useDeleteWorkoutPreset();
-  // Separate instance for the "Save Plan as Preset" inline form.
   const saveAsPresetMutation = useCreateWorkoutPreset();
 
-  // ── Derived ──
   const history = historyQuery.data || [];
-  const historyLoading = historyQuery.isPending;
-  const customExercises = customExercisesQuery.data || [];
   const presets = presetsQuery.data || [];
-  const presetsLoading = presetsQuery.isPending;
 
-  const saving = logWorkoutMutation.isPending;
-  const saveError =
-    saveClientError || (logWorkoutMutation.error && logWorkoutMutation.error.message) || "";
-
-  const quickSaving = quickLogMutation.isPending;
-  const quickError =
-    quickClientError || (quickLogMutation.error && quickLogMutation.error.message) || "";
-
-  const exSaving = createCustomExerciseMutation.isPending;
+  const saveError = logWorkoutMutation.error?.message;
+  const quickError = quickLogMutation.error?.message;
   const exError =
     exClientError ||
-    (createCustomExerciseMutation.error && createCustomExerciseMutation.error.message) ||
-    (deleteCustomExerciseMutation.error && deleteCustomExerciseMutation.error.message) ||
-    "";
-
+    createCustomExerciseMutation.error?.message ||
+    deleteCustomExerciseMutation.error?.message;
   const presetSaving =
     createWorkoutPresetMutation.isPending || updateWorkoutPresetMutation.isPending;
   const presetError =
     presetClientError ||
-    (createWorkoutPresetMutation.error && createWorkoutPresetMutation.error.message) ||
-    (updateWorkoutPresetMutation.error && updateWorkoutPresetMutation.error.message) ||
-    (deleteWorkoutPresetMutation.error && deleteWorkoutPresetMutation.error.message) ||
-    "";
+    createWorkoutPresetMutation.error?.message ||
+    updateWorkoutPresetMutation.error?.message ||
+    deleteWorkoutPresetMutation.error?.message;
+  const saveAsPresetErr = saveAsPresetClientErr || saveAsPresetMutation.error?.message;
 
-  const saveAsPresetSaving = saveAsPresetMutation.isPending;
-  const saveAsPresetErr =
-    saveAsPresetClientErr ||
-    (saveAsPresetMutation.error && saveAsPresetMutation.error.message) ||
-    "";
-
-  // All exercises merged (static + custom)
   const allExercises = [
     ...EXERCISES,
-    ...customExercises.map((ce) => ({
-      id: ce.id,
-      name: ce.name,
-      category: ce.category,
-      muscles: Array.isArray(ce.muscles) ? ce.muscles : [],
-      isCustom: true,
-      dbId: ce.id,
-    })),
+    ...(customExercisesQuery.data || []).map((ce) => ({ ...ce, isCustom: true })),
   ];
+  const inCategory = (cat) =>
+    cat === "All" ? allExercises : allExercises.filter((e) => e.category === cat);
+  const enabledGenCategories = CATEGORIES.filter((cat) => genEnabled.has(cat));
 
-  // Plan helpers
   const planIds = new Set(plan.map((e) => e.id));
-
-  function toggleExercise(exercise) {
-    if (planIds.has(exercise.id)) setPlan((prev) => prev.filter((e) => e.id !== exercise.id));
-    else setPlan((prev) => [...prev, exercise]);
-  }
+  const presetPlanIds = new Set(presetPlan.map((e) => e.id));
 
   function removeExercise(id) {
     setPlan((prev) => prev.filter((e) => e.id !== id));
   }
+
   function clearPlan() {
     setPlan([]);
-    setSaveClientError("");
     setSaveAsPreset(false);
   }
 
-  // Generator
-  function toggleGenCategory(cat) {
-    setGenEnabled((prev) => {
-      const n = new Set(prev);
-      n.has(cat) ? n.delete(cat) : n.add(cat);
-      return n;
-    });
-  }
-
   function generateWorkout() {
-    const picked = [];
-    for (const cat of CATEGORIES) {
-      if (!genEnabled.has(cat)) continue;
-      const pool = allExercises.filter((e) => e.category === cat);
-      const count = Math.min(genCounts[cat] || 0, pool.length);
-      picked.push(...[...pool].sort(() => Math.random() - 0.5).slice(0, count));
-    }
-    setPlan(picked);
+    setPlan(
+      enabledGenCategories.flatMap((cat) =>
+        // ponytail: random-comparator shuffle is slightly biased; use Fisher-Yates if it matters
+        inCategory(cat)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, genCounts[cat])
+      )
+    );
     setShowGenerator(false);
   }
 
-  // Save plan to calendar
   function handleSavePlan() {
-    if (!plan.length) return;
-    setSaveClientError("");
     const cats = [...new Set(plan.map((e) => e.category))];
-    const splitDay = cats.length === 1 ? cats[0].toLowerCase().replace(/ /g, "_") : "custom";
-    const payload = {
-      date: selectedDate,
-      splitDay,
-      exercises: plan.map((e) => ({
-        id: e.id,
-        name: e.name,
-        category: e.category,
-        muscles: e.muscles,
-      })),
-    };
-    logWorkoutMutation.mutate(payload, {
-      onSuccess: () => toast.success("Workout saved to calendar. Nice work!"),
-    });
-  }
-
-  // Save plan as preset
-  function handleSaveAsPreset() {
-    if (!saveAsPresetName.trim()) {
-      setSaveAsPresetClientErr("Enter a preset name.");
-      return;
-    }
-    setSaveAsPresetClientErr("");
-    const payload = {
-      name: saveAsPresetName.trim(),
-      exercises: plan.map((e) => ({
-        id: e.id,
-        name: e.name,
-        category: e.category,
-        muscles: e.muscles,
-      })),
-    };
-    saveAsPresetMutation.mutate(payload, {
-      onSuccess: () => {
-        setSaveAsPreset(false);
-        setSaveAsPresetName("");
-        toast.success("Plan saved as preset");
+    logWorkoutMutation.mutate(
+      {
+        date: selectedDate,
+        splitDay: cats.length === 1 ? slug(cats[0]) : "custom",
+        exercises: toPayload(plan),
       },
-    });
+      { onSuccess: () => toast.success("Workout saved to calendar. Nice work!") }
+    );
   }
 
-  // Quick log
-  function toggleQuickCategory(cat) {
-    setQuickCategories((prev) => {
-      const n = new Set(prev);
-      n.has(cat) ? n.delete(cat) : n.add(cat);
-      return n;
-    });
+  function closeSaveAsPreset() {
+    setSaveAsPreset(false);
+    setSaveAsPresetName("");
+    setSaveAsPresetClientErr("");
+  }
+
+  function handleSaveAsPreset() {
+    const name = saveAsPresetName.trim();
+    if (!name) return setSaveAsPresetClientErr("Enter a preset name.");
+    setSaveAsPresetClientErr("");
+    saveAsPresetMutation.mutate(
+      { name, exercises: toPayload(plan) },
+      {
+        onSuccess: () => {
+          closeSaveAsPreset();
+          toast.success("Plan saved as preset");
+        },
+      }
+    );
   }
 
   function handleQuickLog() {
-    if (!quickCategories.size) return;
-    setQuickClientError("");
-    const cats = [...quickCategories];
-    const splitDay =
-      cats.length === 1
-        ? cats[0].toLowerCase().replace(/ /g, "_")
-        : cats.map((c) => c.toLowerCase().replace(/ /g, "_")).join("+");
     quickLogMutation.mutate(
-      { date: selectedDate, splitDay, exercises: [] },
+      { date: selectedDate, splitDay: [...quickCategories].map(slug).join("+"), exercises: [] },
       {
         onSuccess: () => {
           setQuickCategories(new Set());
@@ -322,52 +275,30 @@ export default function Workouts() {
     );
   }
 
-  // Custom exercise form
   function handleCreateExercise() {
-    if (!exForm.name.trim()) {
-      setExClientError("Name is required.");
-      return;
-    }
+    const name = exForm.name.trim();
+    if (!name) return setExClientError("Name is required.");
     const muscles = exForm.muscles
       .split(",")
       .map((m) => m.trim())
       .filter(Boolean);
-    if (!muscles.length) {
-      setExClientError("Enter at least one muscle.");
-      return;
-    }
+    if (!muscles.length) return setExClientError("Enter at least one muscle.");
     setExClientError("");
     createCustomExerciseMutation.mutate(
-      { name: exForm.name.trim(), category: exForm.category, muscles },
+      { name, category: exForm.category, muscles },
       {
         onSuccess: () => {
-          setExForm(EMPTY_EX_FORM);
-          closePanel();
+          setPanelMode(null);
           toast.success("Custom exercise created");
         },
       }
     );
   }
 
-  function handleDeleteCustomExercise(id) {
-    deleteCustomExerciseMutation.mutate(id, {
-      onSuccess: () => {
-        // Keep local plan in sync — the deleted exercise can no longer be in it.
-        setPlan((prev) => prev.filter((e) => e.id !== id));
-      },
-    });
-  }
-
-  // Preset panel helpers
-  function openPresetsPanel() {
-    setEditingPreset(null);
-    setPanelMode("presets");
-  }
-
   function openNewPresetPanel(preset = null) {
     setEditingPreset(preset);
-    setPresetName(preset ? preset.name : "");
-    setPresetPlan(preset ? (Array.isArray(preset.exercises) ? preset.exercises : []) : []);
+    setPresetName(preset?.name ?? "");
+    setPresetPlan(preset?.exercises ?? []);
     setPresetCategory("All");
     setPresetClientError("");
     setPanelMode("new-preset");
@@ -379,63 +310,26 @@ export default function Workouts() {
     setPanelMode("new-exercise");
   }
 
-  function closePanel() {
-    setPanelMode(null);
-  }
-
-  const presetPlanIds = new Set(presetPlan.map((e) => e.id));
-
-  function togglePresetExercise(exercise) {
-    if (presetPlanIds.has(exercise.id))
-      setPresetPlan((prev) => prev.filter((e) => e.id !== exercise.id));
-    else setPresetPlan((prev) => [...prev, exercise]);
-  }
-
   function handleSavePreset() {
-    if (!presetName.trim()) {
-      setPresetClientError("Enter a preset name.");
-      return;
-    }
+    const name = presetName.trim();
+    if (!name) return setPresetClientError("Enter a preset name.");
     setPresetClientError("");
-    const payload = {
-      name: presetName.trim(),
-      exercises: presetPlan.map((e) => ({
-        id: e.id,
-        name: e.name,
-        category: e.category,
-        muscles: e.muscles,
-      })),
-    };
+    const data = { name, exercises: toPayload(presetPlan) };
     const onSuccess = () => {
-      closePanel();
+      setPanelMode(null);
       toast.success(editingPreset ? "Preset updated" : "Preset saved");
     };
     if (editingPreset) {
-      updateWorkoutPresetMutation.mutate({ id: editingPreset.id, data: payload }, { onSuccess });
+      updateWorkoutPresetMutation.mutate({ id: editingPreset.id, data }, { onSuccess });
     } else {
-      createWorkoutPresetMutation.mutate(payload, { onSuccess });
+      createWorkoutPresetMutation.mutate(data, { onSuccess });
     }
   }
 
-  function handleDeletePreset(id) {
-    deleteWorkoutPresetMutation.mutate(id);
-  }
-
   function handleUsePreset(preset) {
-    const exercises = Array.isArray(preset.exercises) ? preset.exercises : [];
-    setPlan(exercises);
-    closePanel();
+    setPlan(preset.exercises);
+    setPanelMode(null);
   }
-
-  // Filtered library
-  const visibleExercises =
-    activeCategory === "All"
-      ? allExercises
-      : allExercises.filter((e) => e.category === activeCategory);
-  const visiblePresetExercises =
-    presetCategory === "All"
-      ? allExercises
-      : allExercises.filter((e) => e.category === presetCategory);
 
   return (
     <div className="space-y-6">
@@ -456,7 +350,12 @@ export default function Workouts() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-sm font-bold">Today's Plan</h2>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={openPresetsPanel}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setPanelMode("presets")}
+            >
               Presets
             </Button>
             <Button
@@ -488,40 +387,32 @@ export default function Workouts() {
             </p>
           ) : (
             <ul className="space-y-2">
-              {plan.map((exercise) => {
-                const colors = CATEGORY_COLORS[exercise.category] || {};
-                return (
-                  <li key={exercise.id} className="flex items-center gap-3">
-                    <span
-                      className={cn(
-                        "size-2.5 rounded-full shrink-0",
-                        colors.dot || "bg-muted-foreground"
-                      )}
-                    />
-                    <span className="text-sm font-semibold shrink-0">{exercise.name}</span>
-                    <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-                      {exercise.muscles.map((m) => (
-                        <span
-                          key={m}
-                          className="rounded-full bg-muted text-muted-foreground text-xs px-2 py-0.5"
-                        >
-                          {m}
-                        </span>
-                      ))}
-                    </div>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      onClick={() => removeExercise(exercise.id)}
-                      aria-label={`Remove ${exercise.name}`}
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                    >
-                      <X />
-                    </Button>
-                  </li>
-                );
-              })}
+              {plan.map((exercise) => (
+                <li key={exercise.id} className="flex items-center gap-3">
+                  <CategoryDot category={exercise.category} className="size-2.5" />
+                  <span className="text-sm font-semibold shrink-0">{exercise.name}</span>
+                  <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                    {exercise.muscles.map((m) => (
+                      <span
+                        key={m}
+                        className="rounded-full bg-muted text-muted-foreground text-xs px-2 py-0.5"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => removeExercise(exercise.id)}
+                    aria-label={`Remove ${exercise.name}`}
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                  >
+                    <X />
+                  </Button>
+                </li>
+              ))}
             </ul>
           )}
         </div>
@@ -546,20 +437,12 @@ export default function Workouts() {
                   <Button
                     type="button"
                     onClick={handleSaveAsPreset}
-                    disabled={saveAsPresetSaving}
+                    disabled={saveAsPresetMutation.isPending}
                     className="flex-1"
                   >
-                    {saveAsPresetSaving ? "Saving..." : "Save Preset"}
+                    {saveAsPresetMutation.isPending ? "Saving..." : "Save Preset"}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setSaveAsPreset(false);
-                      setSaveAsPresetName("");
-                      setSaveAsPresetClientErr("");
-                    }}
-                  >
+                  <Button type="button" variant="outline" onClick={closeSaveAsPreset}>
                     Cancel
                   </Button>
                 </div>
@@ -578,10 +461,10 @@ export default function Workouts() {
             <Button
               type="button"
               onClick={handleSavePlan}
-              disabled={saving}
+              disabled={logWorkoutMutation.isPending}
               className="w-full h-10"
             >
-              {saving ? "Saving..." : "Save to Calendar"}
+              {logWorkoutMutation.isPending ? "Saving..." : "Save to Calendar"}
             </Button>
           </div>
         )}
@@ -597,41 +480,32 @@ export default function Workouts() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map((cat) => {
-              const isSelected = quickCategories.has(cat);
-              const colors = CATEGORY_COLORS[cat] || {};
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => toggleQuickCategory(cat)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-colors",
-                    isSelected
-                      ? `${colors.badge} border-transparent`
-                      : "border-border text-muted-foreground hover:border-muted-foreground/40"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "size-2 rounded-full shrink-0",
-                      colors.dot || "bg-muted-foreground"
-                    )}
-                  />
-                  {cat}
-                </button>
-              );
-            })}
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setQuickCategories((prev) => toggleInSet(prev, cat))}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-colors",
+                  quickCategories.has(cat)
+                    ? `${CATEGORY_COLORS[cat].badge} border-transparent`
+                    : "border-border text-muted-foreground hover:border-muted-foreground/40"
+                )}
+              >
+                <CategoryDot category={cat} />
+                {cat}
+              </button>
+            ))}
           </div>
           {quickError && <p className="text-sm text-destructive">{quickError}</p>}
           {quickCategories.size > 0 && (
             <Button
               type="button"
               onClick={handleQuickLog}
-              disabled={quickSaving}
+              disabled={quickLogMutation.isPending}
               className="w-full h-10"
             >
-              {quickSaving ? "Saving..." : `Log ${[...quickCategories].join(", ")}`}
+              {quickLogMutation.isPending ? "Saving..." : `Log ${[...quickCategories].join(", ")}`}
             </Button>
           )}
         </CardContent>
@@ -651,36 +525,18 @@ export default function Workouts() {
           <p className="text-sm text-destructive mb-3">Failed to load custom exercises.</p>
         )}
 
-        {/* Category tabs */}
-        <div className="flex gap-0 border-b border-border mb-4 overflow-x-auto">
-          {["All", ...CATEGORIES].map((cat) => {
-            const isActive = activeCategory === cat;
-            const colors = cat !== "All" ? CATEGORY_COLORS[cat] : null;
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setActiveCategory(cat)}
-                className={cn(
-                  "px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors",
-                  isActive && colors
-                    ? colors.tab
-                    : isActive
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {cat}
-              </button>
-            );
-          })}
-        </div>
+        <CategoryTabs
+          value={activeCategory}
+          onChange={setActiveCategory}
+          className="mb-4"
+          tabClassName="px-4 py-2.5 text-sm"
+        />
 
         {/* Exercise grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {visibleExercises.map((exercise) => {
+          {inCategory(activeCategory).map((exercise) => {
             const isAdded = planIds.has(exercise.id);
-            const colors = CATEGORY_COLORS[exercise.category] || {};
+            const toggle = () => setPlan((prev) => toggleById(prev, exercise));
             return (
               <div
                 key={exercise.id}
@@ -690,21 +546,22 @@ export default function Workouts() {
                   "bg-card rounded-xl p-4 cursor-pointer transition-colors relative ring-1",
                   isAdded ? "ring-primary/40" : "ring-foreground/10 hover:ring-primary/30"
                 )}
-                onClick={() => toggleExercise(exercise)}
+                onClick={toggle}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    toggleExercise(exercise);
+                    toggle();
                   }
                 }}
               >
-                {/* Custom delete button */}
                 {exercise.isCustom && (
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDeleteCustomExercise(exercise.dbId || exercise.id);
+                      deleteCustomExerciseMutation.mutate(exercise.id, {
+                        onSuccess: () => removeExercise(exercise.id),
+                      });
                     }}
                     className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors"
                     aria-label="Delete custom exercise"
@@ -713,7 +570,10 @@ export default function Workouts() {
                   </button>
                 )}
                 <p
-                  className={cn("text-xs font-medium mb-1", colors.text || "text-muted-foreground")}
+                  className={cn(
+                    "text-xs font-medium mb-1",
+                    CATEGORY_COLORS[exercise.category]?.text || "text-muted-foreground"
+                  )}
                 >
                   {exercise.category}
                 </p>
@@ -742,7 +602,7 @@ export default function Workouts() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleExercise(exercise);
+                      toggle();
                     }}
                     className="text-xs font-semibold text-primary hover:underline"
                   >
@@ -760,7 +620,7 @@ export default function Workouts() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           Workout History
         </h2>
-        {historyLoading ? (
+        {historyQuery.isPending ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-16 rounded-xl" />
@@ -771,15 +631,14 @@ export default function Workouts() {
         ) : history.length > 0 ? (
           <Card className="py-0 overflow-hidden">
             <ul className="divide-y divide-border">
-              {history.map((session, idx) => {
-                const exerciseNames = Array.isArray(session.exercises)
-                  ? session.exercises
-                      .map((e) => e.name)
-                      .filter(Boolean)
-                      .join(", ")
-                  : "";
+              {history.map((session) => {
+                // filter(Boolean): sessions predating name validation may lack names.
+                const exerciseNames = session.exercises
+                  .map((e) => e.name)
+                  .filter(Boolean)
+                  .join(", ");
                 return (
-                  <li key={session.id || idx} className="px-5 py-4">
+                  <li key={session.id} className="px-5 py-4">
                     <div className="flex items-baseline justify-between gap-4">
                       <p className="text-sm font-semibold">{toHumanLabel(session.splitDay)}</p>
                       <span className="text-xs text-muted-foreground shrink-0">
@@ -819,7 +678,6 @@ export default function Workouts() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Step 1 — category toggles */}
           <div>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
               Categories
@@ -827,12 +685,12 @@ export default function Workouts() {
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map((cat) => {
                 const isOn = genEnabled.has(cat);
-                const colors = CATEGORY_COLORS[cat] || {};
+                const colors = CATEGORY_COLORS[cat];
                 return (
                   <button
                     key={cat}
                     type="button"
-                    onClick={() => toggleGenCategory(cat)}
+                    onClick={() => setGenEnabled((prev) => toggleInSet(prev, cat))}
                     className={cn(
                       "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors",
                       isOn
@@ -853,28 +711,19 @@ export default function Workouts() {
             </div>
           </div>
 
-          {/* Step 2 — counts for enabled categories */}
-          {genEnabled.size > 0 && (
+          {enabledGenCategories.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                 Exercises per category
               </p>
               <div className="space-y-2">
-                {CATEGORIES.filter((cat) => genEnabled.has(cat)).map((cat) => {
-                  const colors = CATEGORY_COLORS[cat] || {};
-                  const pool = allExercises.filter((e) => e.category === cat).length;
+                {enabledGenCategories.map((cat) => {
+                  const pool = inCategory(cat).length;
                   return (
                     <div key={cat} className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className={cn(
-                            "size-2.5 rounded-full shrink-0",
-                            colors.dot || "bg-muted-foreground"
-                          )}
-                        />
-                        <span
-                          className={cn("text-sm font-medium", colors.text || "text-foreground")}
-                        >
+                        <CategoryDot category={cat} className="size-2.5" />
+                        <span className={cn("text-sm font-medium", CATEGORY_COLORS[cat].text)}>
                           {cat}
                         </span>
                         <span className="text-xs text-muted-foreground">({pool} available)</span>
@@ -885,17 +734,14 @@ export default function Workouts() {
                           size="icon-sm"
                           variant="outline"
                           onClick={() =>
-                            setGenCounts((prev) => ({
-                              ...prev,
-                              [cat]: Math.max(1, (prev[cat] || 1) - 1),
-                            }))
+                            setGenCounts((prev) => ({ ...prev, [cat]: Math.max(1, prev[cat] - 1) }))
                           }
                           aria-label={`Fewer ${cat}`}
                         >
                           <Minus />
                         </Button>
                         <span className="w-8 text-center text-sm font-semibold">
-                          {genCounts[cat] ?? 1}
+                          {genCounts[cat]}
                         </span>
                         <Button
                           type="button"
@@ -904,7 +750,7 @@ export default function Workouts() {
                           onClick={() =>
                             setGenCounts((prev) => ({
                               ...prev,
-                              [cat]: Math.min(pool, (prev[cat] || 1) + 1),
+                              [cat]: Math.min(pool, prev[cat] + 1),
                             }))
                           }
                           aria-label={`More ${cat}`}
@@ -941,14 +787,8 @@ export default function Workouts() {
       </Dialog>
 
       {/* Slide-over Panel */}
-      <Sheet
-        open={panelMode !== null}
-        onOpenChange={(open) => {
-          if (!open) closePanel();
-        }}
-      >
+      <Sheet open={panelMode !== null} onOpenChange={(open) => !open && setPanelMode(null)}>
         <SheetContent className="w-full sm:max-w-md p-0 gap-0">
-          {/* Panel: Presets list */}
           {panelMode === "presets" && (
             <>
               <SheetHeader className="flex-row items-center justify-between border-b pr-12">
@@ -963,7 +803,7 @@ export default function Workouts() {
                 </Button>
               </SheetHeader>
               <div className="flex-1 overflow-y-auto p-5">
-                {presetsLoading ? (
+                {presetsQuery.isPending ? (
                   <div className="space-y-3">
                     {[0, 1].map((i) => (
                       <Skeleton key={i} className="h-24 rounded-xl" />
@@ -985,7 +825,7 @@ export default function Workouts() {
                 ) : (
                   <ul className="space-y-3">
                     {presets.map((preset) => {
-                      const exList = Array.isArray(preset.exercises) ? preset.exercises : [];
+                      const exList = preset.exercises;
                       const cats = [...new Set(exList.map((e) => e.category))].filter(Boolean);
                       return (
                         <li key={preset.id} className="bg-muted/50 rounded-xl p-4 space-y-3">
@@ -1022,7 +862,7 @@ export default function Workouts() {
                               type="button"
                               size="sm"
                               variant="outline"
-                              onClick={() => handleDeletePreset(preset.id)}
+                              onClick={() => deleteWorkoutPresetMutation.mutate(preset.id)}
                               className="text-destructive"
                             >
                               Delete
@@ -1037,7 +877,6 @@ export default function Workouts() {
             </>
           )}
 
-          {/* Panel: New / Edit preset */}
           {panelMode === "new-preset" && (
             <>
               <SheetHeader className="flex-row items-center gap-3 border-b pr-12">
@@ -1063,66 +902,36 @@ export default function Workouts() {
                   className="h-9"
                 />
 
-                {/* Selected exercises */}
                 {presetPlan.length > 0 && (
                   <div className="bg-muted/50 rounded-xl p-3 space-y-1.5">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                       Selected ({presetPlan.length})
                     </p>
-                    {presetPlan.map((e) => {
-                      const colors = CATEGORY_COLORS[e.category] || {};
-                      return (
-                        <div key={e.id} className="flex items-center gap-2">
-                          <span
-                            className={cn(
-                              "size-2 rounded-full shrink-0",
-                              colors.dot || "bg-muted-foreground"
-                            )}
-                          />
-                          <span className="text-sm flex-1">{e.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => togglePresetExercise(e)}
-                            className="text-muted-foreground hover:text-destructive transition-colors"
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
+                    {presetPlan.map((e) => (
+                      <div key={e.id} className="flex items-center gap-2">
+                        <CategoryDot category={e.category} />
+                        <span className="text-sm flex-1">{e.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPresetPlan((prev) => toggleById(prev, e))}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {/* Category tabs (mini) */}
-                <div className="flex gap-0 border-b border-border overflow-x-auto">
-                  {["All", ...CATEGORIES].map((cat) => {
-                    const isActive = presetCategory === cat;
-                    const colors = cat !== "All" ? CATEGORY_COLORS[cat] : null;
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setPresetCategory(cat)}
-                        className={cn(
-                          "px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 -mb-px transition-colors",
-                          isActive && colors
-                            ? colors.tab
-                            : isActive
-                              ? "border-primary text-primary"
-                              : "border-transparent text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        {cat}
-                      </button>
-                    );
-                  })}
-                </div>
+                <CategoryTabs
+                  value={presetCategory}
+                  onChange={setPresetCategory}
+                  tabClassName="px-3 py-2 text-xs"
+                />
 
-                {/* Exercise list (compact) */}
                 <div className="space-y-1.5">
-                  {visiblePresetExercises.map((exercise) => {
+                  {inCategory(presetCategory).map((exercise) => {
                     const isAdded = presetPlanIds.has(exercise.id);
-                    const colors = CATEGORY_COLORS[exercise.category] || {};
                     return (
                       <button
                         key={exercise.id}
@@ -1133,14 +942,9 @@ export default function Workouts() {
                             ? "bg-primary/10 border-primary/30"
                             : "border-border hover:bg-accent"
                         )}
-                        onClick={() => togglePresetExercise(exercise)}
+                        onClick={() => setPresetPlan((prev) => toggleById(prev, exercise))}
                       >
-                        <span
-                          className={cn(
-                            "size-2 rounded-full shrink-0",
-                            colors.dot || "bg-muted-foreground"
-                          )}
-                        />
+                        <CategoryDot category={exercise.category} />
                         <span className="text-sm flex-1">{exercise.name}</span>
                         {exercise.isCustom && (
                           <span className="text-xs text-muted-foreground">Custom</span>
@@ -1167,7 +971,6 @@ export default function Workouts() {
             </>
           )}
 
-          {/* Panel: New custom exercise */}
           {panelMode === "new-exercise" && (
             <>
               <SheetHeader className="border-b pr-12">
@@ -1191,7 +994,7 @@ export default function Workouts() {
                     id="ex-category"
                     value={exForm.category}
                     onChange={(e) => setExForm((f) => ({ ...f, category: e.target.value }))}
-                    className={SELECT_CLASS}
+                    className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                   >
                     {CATEGORIES.map((cat) => (
                       <option key={cat} value={cat}>
@@ -1220,10 +1023,10 @@ export default function Workouts() {
                 <Button
                   type="button"
                   onClick={handleCreateExercise}
-                  disabled={exSaving}
+                  disabled={createCustomExerciseMutation.isPending}
                   className="w-full h-10"
                 >
-                  {exSaving ? "Saving..." : "Create Exercise"}
+                  {createCustomExerciseMutation.isPending ? "Saving..." : "Create Exercise"}
                 </Button>
               </div>
             </>

@@ -1,56 +1,28 @@
-// Centralized query-key factories. One source of truth for cache keys and
-// invalidation targets. Conventions:
-//   - Domain root is an array prefix (e.g., ['meals']) so `invalidateQueries
-//     ({ queryKey: queryKeys.meals.all })` clears every meals subquery.
-//   - Within a domain, mutation-targeted reads live under a sub-prefix
-//     (e.g., 'diary') so daily writes don't sweep away rate-limited or
-//     static caches like FatSecret search or workout templates.
-//   - Parameter-bearing keys carry their args as an object so equality is
-//     stable regardless of key order (e.g., ['meals', { date }]).
-
+// The only source of query keys. Prefix arrays double as invalidation targets.
+// Daily writes live under a `diary` sub-prefix so invalidating them doesn't
+// evict the rate-limited FatSecret search cache or the foods/presets library.
 export const queryKeys = {
-  account: {
-    all: ["account"],
-  },
-  goals: {
-    all: ["goals"],
-  },
-  health: {
-    all: ["health"],
-    today: ["health", "today"],
-  },
+  account: { all: ["account"] },
+  goals: { all: ["goals"] },
   water: {
     all: ["water"],
     today: ["water", "today"],
     byDate: (date) => ["water", { date }],
   },
   meals: {
-    all: ["meals"],
-    // Daily diary entries — what meal CRUD invalidates. Kept under its own
-    // sub-prefix so add/delete doesn't evict the FatSecret search/detail
-    // caches (rate-limited) or the custom-foods/presets library.
     diary: ["meals", "diary"],
     byDate: (date) => ["meals", "diary", { date }],
     customFoods: ["meals", "customFoods"],
     presets: ["meals", "presets"],
-    // Per-meal-type favorite foods. favoritesAll is the invalidation prefix.
     favoritesAll: ["meals", "favorites"],
     favorites: (mealType) => ["meals", "favorites", { mealType }],
-    // Per-meal-type recently-logged foods (derived from diary history).
-    // recentAll is the invalidation prefix — meal writes sweep it.
     recentAll: ["meals", "recent"],
     recent: (mealType) => ["meals", "recent", { mealType }],
     search: (q) => ["meals", "search", q],
-    foodDetail: (foodId) => ["meals", "food", foodId],
   },
   workouts: {
-    all: ["workouts"],
-    // Diary entries — what logWorkout invalidates. Static template lives
-    // outside the diary so a workout log doesn't refetch it.
     diary: ["workouts", "diary"],
-    byDate: (date) => ["workouts", "diary", { date }],
     history: (limit) => ["workouts", "diary", "history", { limit }],
-    template: ["workouts", "template"],
     customExercises: ["workouts", "customExercises"],
     presets: ["workouts", "presets"],
   },
@@ -60,9 +32,5 @@ export const queryKeys = {
     weekly: (startDate) => ["progress", "weekly", { startDate }],
     range: (startDate, numDays) => ["progress", "range", { startDate, numDays }],
   },
-  admin: {
-    all: ["admin"],
-    users: ["admin", "users"],
-    user: (id) => ["admin", "users", id],
-  },
+  admin: { users: ["admin", "users"] },
 };

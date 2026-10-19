@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Pencil, Trash2, X, Loader2, Star } from "lucide-react";
@@ -31,21 +31,46 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-
-function getTodayString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+import { cn, ymd } from "@/lib/utils";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 
-// Native <select> styled to match the shadcn token system (used for the simple
-// numeric serving/unit pickers).
+// Native <select> styled to match the shadcn token system.
 const SELECT_CLASS =
   "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
+
+const LIST_CLASS = "divide-y divide-border border border-border rounded-lg overflow-hidden";
+
+const MACROS = [
+  { key: "calories", unit: "", label: "Calories", short: "kcal" },
+  { key: "protein", unit: "g", label: "Protein", short: "protein" },
+  { key: "carbs", unit: "g", label: "Carbs", short: "carbs" },
+  { key: "fat", unit: "g", label: "Fat", short: "fat" },
+];
+
+const GOAL_FIELDS = [
+  { key: "calorieMin", label: "Calorie Min", short: "Cal Min", unit: "kcal" },
+  { key: "calorieMax", label: "Calorie Max", short: "Cal Max", unit: "kcal" },
+  { key: "proteinMin", label: "Protein Min", short: "Protein Min", unit: "g" },
+  { key: "proteinMax", label: "Protein Max", short: "Protein Max", unit: "g" },
+  { key: "carbsGoal", label: "Carbs Goal", short: "Carbs", unit: "g" },
+  { key: "fatGoal", label: "Fat Goal", short: "Fat", unit: "g" },
+];
+
+const REQUIRED_NUTRIENTS = [
+  ["calories", "Calories"],
+  ["protein", "Protein (g)"],
+  ["carbs", "Carbs (g)"],
+  ["fat", "Fat (g)"],
+];
+
+const OPTIONAL_NUTRIENTS = [
+  ["fiber", "Fiber (g)"],
+  ["sugar", "Sugar (g)"],
+  ["addedSugars", "Added sugars (g)"],
+  ["saturatedFat", "Sat. fat (g)"],
+  ["sodium", "Sodium (mg)"],
+];
 
 const EMPTY_CUSTOM_SERVING = {
   description: "1 serving",
@@ -70,8 +95,14 @@ const EMPTY_CUSTOM_FOOD = {
   servings: [{ ...EMPTY_CUSTOM_SERVING }],
 };
 
+const EMPTY_PRESET = { id: null, name: "", items: [] };
+
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Empty string → null (unset); any other value (including 0) → Number.
+const toNullableNumber = (v) => (v === "" || v == null ? null : Number(v));
+
 function defaultServingIdx(servings) {
-  if (!Array.isArray(servings) || servings.length === 0) return 0;
   const i = servings.findIndex((s) => s.isDefault);
   return i >= 0 ? i : 0;
 }
@@ -106,7 +137,7 @@ function buildLogPayload(chosen, servingIdx, quantity) {
   };
 }
 
-// Convert a FatSecret search result into our "chosen food" shape (source='fatsecret').
+// Convert a FatSecret food detail into our "chosen food" shape (source='fatsecret').
 function fsFoodToChosen(f) {
   return {
     source: "fatsecret",
@@ -122,20 +153,8 @@ function fsFoodToChosen(f) {
   };
 }
 
-// Convert a custom food (from GET /custom-foods) into "chosen food" shape (source='custom').
-function customFoodToChosen(f) {
-  return {
-    source: "custom",
-    customFoodId: f.id,
-    foodName: f.name,
-    brandName: f.brandName,
-    foodType: f.foodType,
-    servings: f.servings,
-  };
-}
-
-// Convert a serializeFood-shaped row (favorites/custom foods, servings inline)
-// into "chosen food" shape. Source-aware so the row can be logged directly.
+// Convert a serializeFood-shaped row (custom foods, favorites, recents;
+// servings inline) into "chosen food" shape so it can be logged directly.
 function storedFoodToChosen(f) {
   const base = {
     foodName: f.name,
@@ -156,13 +175,81 @@ function fmt(v, suffix = "") {
   return `${shown}${suffix}`;
 }
 
+function servingSummary(s) {
+  return s ? `${s.description} · ${fmt(s.calories)} kcal · ${fmt(s.protein, "g")} protein` : "";
+}
+
+// Trimmed `value`, published after `delay` ms without changes. Clearing the
+// input clears the result immediately.
+function useDebouncedQuery(value, delay) {
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setDebounced("");
+      return;
+    }
+    const t = setTimeout(() => setDebounced(trimmed), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return value.trim() ? debounced : "";
+}
+
+function FavoriteButton({ name, isFav, pending, onClick, shrink = true }) {
+  return (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant="ghost"
+      onClick={onClick}
+      disabled={pending}
+      aria-label={`${isFav ? "Unfavorite" : "Favorite"} ${name}`}
+      aria-pressed={isFav}
+      className={cn(
+        shrink && "shrink-0",
+        isFav ? "text-primary" : "text-muted-foreground hover:text-primary"
+      )}
+    >
+      {pending ? (
+        <Loader2 className="animate-spin" />
+      ) : (
+        <Star className={isFav ? "fill-current" : ""} />
+      )}
+    </Button>
+  );
+}
+
+// Clickable stored-food row (favorites, recents, My Foods) with trailing actions.
+function FoodRow({ food, showBrand = true, detail = "", onPick, children }) {
+  return (
+    <li className="flex items-center justify-between px-3 py-2.5 gap-2">
+      <button
+        type="button"
+        onClick={onPick}
+        className="flex-1 min-w-0 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
+      >
+        <p className="text-sm font-medium truncate">
+          {food.name}
+          {showBrand && food.brandName ? (
+            <span className="text-muted-foreground font-normal"> · {food.brandName}</span>
+          ) : null}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {servingSummary(food.servings[defaultServingIdx(food.servings)])}
+          {detail}
+        </p>
+      </button>
+      {children}
+    </li>
+  );
+}
+
 export default function Meals() {
-  const today = getTodayString();
   const location = useLocation();
   const navigate = useNavigate();
 
   // ── Page state ──
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(ymd);
   const [notice, setNotice] = useState(""); // page-level notice ("X items dropped" etc.)
   const [saveAsMeal, setSaveAsMeal] = useState(null);
 
@@ -172,9 +259,8 @@ export default function Meals() {
 
   // ── Search panel state ──
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [searchClientError, setSearchClientError] = useState("");
-  const debounceRef = useRef(null);
+  const debouncedSearchQuery = useDebouncedQuery(searchQuery, 700);
 
   // ── Log panel state ──
   const [chosenFood, setChosenFood] = useState(null);
@@ -188,10 +274,9 @@ export default function Meals() {
   const [customFoodAdvancedOpen, setCustomFoodAdvancedOpen] = useState({});
 
   // ── Preset state ──
-  const [presetForm, setPresetForm] = useState({ id: null, name: "", items: [] });
+  const [presetForm, setPresetForm] = useState(EMPTY_PRESET);
   const [presetSearchQuery, setPresetSearchQuery] = useState("");
-  const [debouncedPresetSearchQuery, setDebouncedPresetSearchQuery] = useState("");
-  const presetDebounceRef = useRef(null);
+  const debouncedPresetSearchQuery = useDebouncedQuery(presetSearchQuery, 500);
   const [presetPickFood, setPresetPickFood] = useState(null);
   const [presetPickServingIdx, setPresetPickServingIdx] = useState(0);
   const [presetPickQuantity, setPresetPickQuantity] = useState(1);
@@ -236,32 +321,28 @@ export default function Meals() {
   const loading = mealsQuery.isPending;
   const error =
     notice ||
-    (mealsQuery.error && mealsQuery.error.message) ||
-    (customFoodsQuery.error && customFoodsQuery.error.message) ||
-    (presetsQuery.error && presetsQuery.error.message) ||
-    (goalsQuery.error && goalsQuery.error.message) ||
-    (deleteMealMutation.error && deleteMealMutation.error.message) ||
+    mealsQuery.error?.message ||
+    customFoodsQuery.error?.message ||
+    presetsQuery.error?.message ||
+    goalsQuery.error?.message ||
+    deleteMealMutation.error?.message ||
     "";
   const customFoods = customFoodsQuery.error ? [] : customFoodsQuery.data || [];
   const presets = presetsQuery.error ? [] : presetsQuery.data || [];
   const goals = goalsQuery.data;
 
-  // Derive favorites (and favoriteIds) only from successfully-fetched data so a
-  // read error isn't silently treated as "no favorites" — that would make the
-  // star toggle always take the add path and hide the failure. React Query
-  // retains the last good data across a background refetch error; on a hard
-  // initial failure data is undefined and the error is surfaced via searchError.
+  // Not error-gated: React Query keeps the last good data across a refetch
+  // error, and a hard failure is surfaced via searchError.
   const favorites = favoritesQuery.data || [];
   const favoriteIds = new Set(favorites.map((f) => f.id));
   // Recently-logged foods for this meal type, minus anything already shown in
-  // the custom "My Foods" list above (those are listed there with edit/delete).
+  // "My Foods" (those are listed there with edit/delete).
   const customFoodIds = new Set(customFoods.map((f) => f.id));
   const recentFoods = (recentFoodsQuery.error ? [] : recentFoodsQuery.data || []).filter(
     (f) => !customFoodIds.has(f.id)
   );
-  // Track which row's star is mid-flight so we can show a spinner. Adds via a
-  // search hit are keyed by fatSecretFoodId (no stored id yet); everything else
-  // by the stored food id.
+  // Which row's star is mid-flight. Adds via a search hit are keyed by
+  // fatSecretFoodId (no stored id yet); everything else by the stored food id.
   const favoritingFsId = addFavoriteMutation.isPending
     ? addFavoriteMutation.variables?.fatSecretFoodId
     : null;
@@ -271,6 +352,7 @@ export default function Meals() {
   const unfavoritingFoodId = removeFavoriteMutation.isPending
     ? removeFavoriteMutation.variables?.foodId
     : null;
+  const isFavPending = (id) => favoritingFoodId === id || unfavoritingFoodId === id;
 
   const searchResults = searchResultsQuery.data?.foods || [];
   const searchLoading = searchResultsQuery.isFetching;
@@ -278,11 +360,11 @@ export default function Meals() {
   // surfaces here rather than in the custom-food editor.
   const searchError =
     searchClientError ||
-    (searchResultsQuery.error && searchResultsQuery.error.message) ||
-    (favoritesQuery.error && favoritesQuery.error.message) ||
-    (deleteCustomFoodMutation.error && deleteCustomFoodMutation.error.message) ||
-    (addFavoriteMutation.error && addFavoriteMutation.error.message) ||
-    (removeFavoriteMutation.error && removeFavoriteMutation.error.message) ||
+    searchResultsQuery.error?.message ||
+    favoritesQuery.error?.message ||
+    deleteCustomFoodMutation.error?.message ||
+    addFavoriteMutation.error?.message ||
+    removeFavoriteMutation.error?.message ||
     "";
 
   const presetSearchResults = presetSearchResultsQuery.data?.foods || [];
@@ -290,14 +372,13 @@ export default function Meals() {
 
   // ── Derived from mutations ──
   const submitting = addMealMutation.isPending;
-  const submitError =
-    submitClientError || (addMealMutation.error && addMealMutation.error.message) || "";
+  const submitError = submitClientError || addMealMutation.error?.message || "";
 
   const savingCustomFood = createCustomFoodMutation.isPending || updateCustomFoodMutation.isPending;
   const customFoodError =
     customFoodClientError ||
-    (createCustomFoodMutation.error && createCustomFoodMutation.error.message) ||
-    (updateCustomFoodMutation.error && updateCustomFoodMutation.error.message) ||
+    createCustomFoodMutation.error?.message ||
+    updateCustomFoodMutation.error?.message ||
     "";
   const deletingCustomFoodId = deleteCustomFoodMutation.isPending
     ? deleteCustomFoodMutation.variables
@@ -310,61 +391,19 @@ export default function Meals() {
   const savingPreset = createPresetMutation.isPending || updatePresetMutation.isPending;
   const presetError =
     presetClientError ||
-    (createPresetMutation.error && createPresetMutation.error.message) ||
-    (updatePresetMutation.error && updatePresetMutation.error.message) ||
-    (deletePresetMutation.error && deletePresetMutation.error.message) ||
-    (logPresetMutation.error && logPresetMutation.error.message) ||
+    createPresetMutation.error?.message ||
+    updatePresetMutation.error?.message ||
+    deletePresetMutation.error?.message ||
+    logPresetMutation.error?.message ||
     "";
 
   const deletingId = deleteMealMutation.isPending ? deleteMealMutation.variables : null;
 
   const goalsSaving = updateGoalsMutation.isPending;
-  const goalsError =
-    goalsClientError || (updateGoalsMutation.error && updateGoalsMutation.error.message) || "";
+  const goalsError = goalsClientError || updateGoalsMutation.error?.message || "";
 
-  // ── Effects ──
-
-  // Sync goals form buffer to the loaded goals (initial load + external updates).
-  // Skip while editing so a background refetch can't clobber unsaved input.
-  useEffect(() => {
-    if (!goals || goalsEditing) return;
-    setGoalsForm({
-      calorieMin: goals.calorieMin ?? "",
-      calorieMax: goals.calorieMax ?? "",
-      proteinMin: goals.proteinMin ?? "",
-      proteinMax: goals.proteinMax ?? "",
-      carbsGoal: goals.carbsGoal ?? "",
-      fatGoal: goals.fatGoal ?? "",
-    });
-  }, [goals, goalsEditing]);
-
-  // Debounce the slide-over search; the actual fetch happens via useFoodSearch.
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const trimmed = searchQuery.trim();
-    if (!trimmed) {
-      setDebouncedSearchQuery("");
-      return;
-    }
-    debounceRef.current = setTimeout(() => setDebouncedSearchQuery(trimmed), 700);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [searchQuery]);
-
-  // Debounce the preset-inline search.
-  useEffect(() => {
-    if (presetDebounceRef.current) clearTimeout(presetDebounceRef.current);
-    const trimmed = presetSearchQuery.trim();
-    if (!trimmed) {
-      setDebouncedPresetSearchQuery("");
-      return;
-    }
-    presetDebounceRef.current = setTimeout(() => setDebouncedPresetSearchQuery(trimmed), 500);
-    return () => {
-      if (presetDebounceRef.current) clearTimeout(presetDebounceRef.current);
-    };
-  }, [presetSearchQuery]);
+  const totals = meals?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const mealLabel = capitalize(slideOver.mealType);
 
   // Deep-link from dashboard quick-add buttons.
   useEffect(() => {
@@ -380,7 +419,6 @@ export default function Meals() {
   // ── Slide-over open/close ──
   function resetPanelState() {
     setSearchQuery("");
-    setDebouncedSearchQuery("");
     setSearchClientError("");
     setChosenFood(null);
     setChosenServingIdx(0);
@@ -389,9 +427,8 @@ export default function Meals() {
     setCustomFoodForm(EMPTY_CUSTOM_FOOD);
     setCustomFoodClientError("");
     setCustomFoodAdvancedOpen({});
-    setPresetForm({ id: null, name: "", items: [] });
+    setPresetForm(EMPTY_PRESET);
     setPresetSearchQuery("");
-    setDebouncedPresetSearchQuery("");
     setPresetPickFood(null);
     setPresetPickServingIdx(0);
     setPresetPickQuantity(1);
@@ -403,7 +440,6 @@ export default function Meals() {
     setPanelMode(initialMode);
     resetPanelState();
     setSaveAsMeal(null);
-    // useCustomFoods + useMealPresets auto-load on mount; no manual fetch.
   }
 
   function closeSlideOver() {
@@ -415,14 +451,10 @@ export default function Meals() {
   function handleSearchInput(e) {
     setSearchQuery(e.target.value);
     setSearchClientError("");
-    // The debounce effect transitions searchQuery → debouncedSearchQuery;
-    // useFoodSearch fires when length >= 2 and caches by query.
   }
 
-  // Click a search result. Custom foods already include their servings inline;
-  // FatSecret search hits are lightweight and need a separate food.get fetch
-  // to materialize the full servings array. getFoodDetail is called directly
-  // (imperative, one-shot) rather than via a hook.
+  // FatSecret search hits arrive without servings and need a one-shot
+  // food.get (direct getFoodDetail call, not a hook); stored foods carry theirs.
   async function pickFoodForLog(food) {
     setSubmitClientError("");
     if (food.source === "fatsecret" && (!food.servings || food.servings.length === 0)) {
@@ -447,7 +479,6 @@ export default function Meals() {
   // ── Log a meal ──
   function handleLogSubmit(e) {
     e.preventDefault();
-    if (!chosenFood) return;
     const q = Number(quantity);
     if (!Number.isFinite(q) || q <= 0) {
       setSubmitClientError("Quantity must be a positive number.");
@@ -467,11 +498,6 @@ export default function Meals() {
     });
   }
 
-  // ── Delete a meal entry ──
-  function handleDelete(id) {
-    deleteMealMutation.mutate(id, { onSuccess: () => toast.success("Entry removed") });
-  }
-
   // ── Custom-food editor ──
   function openCustomFoodEditor(existing = null) {
     if (existing) {
@@ -479,20 +505,10 @@ export default function Meals() {
         id: existing.id,
         name: existing.name,
         brandName: existing.brandName ?? "",
+        // Server nulls → "" so every input stays controlled.
         servings: existing.servings.map((s) => ({
+          ...Object.fromEntries(Object.keys(EMPTY_CUSTOM_SERVING).map((k) => [k, s[k] ?? ""])),
           id: s.id,
-          description: s.description ?? "",
-          metricAmount: s.metricAmount ?? "",
-          metricUnit: s.metricUnit ?? "",
-          calories: s.calories ?? "",
-          protein: s.protein ?? "",
-          carbs: s.carbs ?? "",
-          fat: s.fat ?? "",
-          fiber: s.fiber ?? "",
-          sugar: s.sugar ?? "",
-          sodium: s.sodium ?? "",
-          saturatedFat: s.saturatedFat ?? "",
-          addedSugars: s.addedSugars ?? "",
           isDefault: s.isDefault ?? false,
         })),
       });
@@ -545,18 +561,18 @@ export default function Meals() {
       servings: customFoodForm.servings.map((s) => ({
         id: typeof s.id === "string" ? s.id : null,
         description: s.description.trim(),
-        metricAmount: s.metricAmount === "" ? null : Number(s.metricAmount),
+        metricAmount: toNullableNumber(s.metricAmount),
         metricUnit: s.metricUnit.trim() || null,
         isDefault: s.isDefault === true,
         calories: Number(s.calories),
         protein: Number(s.protein),
         carbs: Number(s.carbs),
         fat: Number(s.fat),
-        fiber: s.fiber === "" ? null : Number(s.fiber),
-        sugar: s.sugar === "" ? null : Number(s.sugar),
-        sodium: s.sodium === "" ? null : Number(s.sodium),
-        saturatedFat: s.saturatedFat === "" ? null : Number(s.saturatedFat),
-        addedSugars: s.addedSugars === "" ? null : Number(s.addedSugars),
+        fiber: toNullableNumber(s.fiber),
+        sugar: toNullableNumber(s.sugar),
+        sodium: toNullableNumber(s.sodium),
+        saturatedFat: toNullableNumber(s.saturatedFat),
+        addedSugars: toNullableNumber(s.addedSugars),
       })),
     };
   }
@@ -575,7 +591,7 @@ export default function Meals() {
         setCustomFoodClientError(`Serving ${i + 1}: description is required.`);
         return;
       }
-      for (const field of ["calories", "protein", "carbs", "fat"]) {
+      for (const [field] of REQUIRED_NUTRIENTS) {
         const n = Number(s[field]);
         if (s[field] === "" || !Number.isFinite(n) || n < 0) {
           setCustomFoodClientError(
@@ -598,13 +614,8 @@ export default function Meals() {
     }
   }
 
-  function handleDeleteCustomFood(id) {
-    deleteCustomFoodMutation.mutate(id);
-  }
-
   // ── Favorites ──
-  // Toggle the favorite state of an already-stored food for the current meal
-  // type. `food` is a serializeFood-shaped row (has a stored id).
+  // Toggle an already-stored food (serializeFood row) for the current meal type.
   function handleToggleFavorite(food) {
     const mealType = slideOver.mealType;
     if (favoriteIds.has(food.id)) {
@@ -612,16 +623,6 @@ export default function Meals() {
     } else {
       addFavoriteMutation.mutate({ foodId: food.id, mealType });
     }
-  }
-
-  // Favorite a raw FatSecret search hit (not yet stored). The server
-  // materializes the food, then the favorites list refetches to show it.
-  function handleFavoriteSearchResult(food) {
-    addFavoriteMutation.mutate({
-      source: "fatsecret",
-      fatSecretFoodId: food.foodId,
-      mealType: slideOver.mealType,
-    });
   }
 
   // ── Preset list actions ──
@@ -636,10 +637,6 @@ export default function Meals() {
         },
       }
     );
-  }
-
-  function handleDeletePreset(id) {
-    deletePresetMutation.mutate(id);
   }
 
   // ── Preset editor ──
@@ -657,10 +654,9 @@ export default function Meals() {
         })),
       });
     } else {
-      setPresetForm({ id: null, name: "", items: [] });
+      setPresetForm(EMPTY_PRESET);
     }
     setPresetSearchQuery("");
-    setDebouncedPresetSearchQuery("");
     setPresetPickFood(null);
     setPresetClientError("");
     setPanelMode("new-preset");
@@ -678,7 +674,6 @@ export default function Meals() {
   }
 
   function addPickedFoodToPreset() {
-    if (!presetPickFood) return;
     const serving = presetPickFood.servings[presetPickServingIdx];
     if (!serving) return;
     if (presetPickFood.source !== "custom") {
@@ -705,7 +700,6 @@ export default function Meals() {
     setPresetPickServingIdx(0);
     setPresetPickQuantity(1);
     setPresetSearchQuery("");
-    setDebouncedPresetSearchQuery("");
   }
 
   function updatePresetItemQuantity(idx, value) {
@@ -763,7 +757,7 @@ export default function Meals() {
     setSaveAsMeal((prev) => ({ ...prev, error: "" }));
     const payload = {
       name,
-      items: valid.map((it) => ({ servingId: it.servingId, quantity: it.quantity ?? 1 })),
+      items: valid.map((it) => ({ servingId: it.servingId, quantity: it.quantity })),
     };
     saveAsPresetMutation.mutate(payload, {
       onSuccess: () => {
@@ -783,18 +777,19 @@ export default function Meals() {
     });
   }
 
+  // ── Goals ──
+  // The form buffer is loaded from the current goals when editing starts, so a
+  // background refetch can't clobber unsaved input.
+  function startEditingGoals() {
+    setGoalsForm(Object.fromEntries(GOAL_FIELDS.map(({ key }) => [key, goals?.[key] ?? ""])));
+    setGoalsEditing(true);
+  }
+
   function handleSaveGoals() {
     setGoalsClientError("");
-    // Empty string → null (unset); any other value (including 0) → Number.
-    const toNullableNumber = (v) => (v === "" || v == null ? null : Number(v));
-    const payload = {
-      calorieMin: toNullableNumber(goalsForm.calorieMin),
-      calorieMax: toNullableNumber(goalsForm.calorieMax),
-      proteinMin: toNullableNumber(goalsForm.proteinMin),
-      proteinMax: toNullableNumber(goalsForm.proteinMax),
-      carbsGoal: toNullableNumber(goalsForm.carbsGoal),
-      fatGoal: toNullableNumber(goalsForm.fatGoal),
-    };
+    const payload = Object.fromEntries(
+      GOAL_FIELDS.map(({ key }) => [key, toNullableNumber(goalsForm[key])])
+    );
     updateGoalsMutation.mutate(payload, {
       onSuccess: () => {
         setGoalsEditing(false);
@@ -803,9 +798,20 @@ export default function Meals() {
     });
   }
 
-  const totals = meals?.totals || { calories: 0, protein: 0, carbs: 0, fat: 0 };
-
   // ─── Panel renderers ────────────────────────────────────────────────────
+  function renderStoredFoodRow(food) {
+    return (
+      <FoodRow key={food.id} food={food} onPick={() => pickFoodForLog(storedFoodToChosen(food))}>
+        <FavoriteButton
+          name={food.name}
+          isFav={favoriteIds.has(food.id)}
+          pending={isFavPending(food.id)}
+          onClick={() => handleToggleFavorite(food)}
+        />
+      </FoodRow>
+    );
+  }
+
   function renderSearchPanel() {
     return (
       <>
@@ -828,15 +834,12 @@ export default function Meals() {
         {searchError && <p className="text-xs text-destructive">{searchError}</p>}
 
         {!searchLoading && searchResults.length > 0 && (
-          <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+          <ul className={LIST_CLASS}>
             {searchResults.map((food) => {
               const p = food.defaultPreview;
               // Search hits carry a fatSecretFoodId, not a stored Food id;
               // match against favorited FS foods to reflect the star state.
               const favForFs = favorites.find((f) => f.fatSecretFoodId === food.foodId);
-              const isFav = !!favForFs;
-              const favPending =
-                favoritingFsId === food.foodId || (favForFs && unfavoritingFoodId === favForFs.id);
               return (
                 <li key={food.foodId} className="flex items-center gap-1 pr-2">
                   <button
@@ -861,38 +864,29 @@ export default function Meals() {
                       ) : null}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {p
-                        ? `Per ${p.description} · ${fmt(p.calories)} kcal · ${fmt(p.protein, "g")} protein`
-                        : "Tap to load servings"}
+                      {p ? `Per ${servingSummary(p)}` : "Tap to load servings"}
                     </p>
                   </button>
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
+                  <FavoriteButton
+                    name={food.foodName}
+                    isFav={!!favForFs}
+                    pending={
+                      favoritingFsId === food.foodId ||
+                      (favForFs && unfavoritingFoodId === favForFs.id)
+                    }
                     onClick={() =>
-                      isFav
+                      favForFs
                         ? removeFavoriteMutation.mutate({
                             foodId: favForFs.id,
                             mealType: slideOver.mealType,
                           })
-                        : handleFavoriteSearchResult(food)
+                        : addFavoriteMutation.mutate({
+                            source: "fatsecret",
+                            fatSecretFoodId: food.foodId,
+                            mealType: slideOver.mealType,
+                          })
                     }
-                    disabled={favPending}
-                    aria-label={isFav ? `Unfavorite ${food.foodName}` : `Favorite ${food.foodName}`}
-                    aria-pressed={isFav}
-                    className={
-                      isFav
-                        ? "shrink-0 text-primary"
-                        : "shrink-0 text-muted-foreground hover:text-primary"
-                    }
-                  >
-                    {favPending ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Star className={isFav ? "fill-current" : ""} />
-                    )}
-                  </Button>
+                  />
                 </li>
               );
             })}
@@ -910,7 +904,7 @@ export default function Meals() {
 
         <button
           type="button"
-          onClick={() => openCustomFoodEditor(null)}
+          onClick={() => openCustomFoodEditor()}
           className="text-xs font-medium text-primary hover:underline"
         >
           + Create custom food
@@ -923,60 +917,7 @@ export default function Meals() {
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 Favorites
               </h3>
-              <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
-                {favorites.map((food) => {
-                  const d = food.servings[defaultServingIdx(food.servings)];
-                  const favPending = unfavoritingFoodId === food.id;
-                  return (
-                    <li
-                      key={food.id}
-                      className="flex items-center justify-between px-3 py-2.5 gap-2"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => pickFoodForLog(storedFoodToChosen(food))}
-                        className="flex-1 min-w-0 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
-                      >
-                        <p className="text-sm font-medium truncate">
-                          {food.name}
-                          {food.brandName ? (
-                            <span className="text-muted-foreground font-normal">
-                              {" "}
-                              · {food.brandName}
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {d
-                            ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, "g")} protein`
-                            : ""}
-                        </p>
-                      </button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() =>
-                          removeFavoriteMutation.mutate({
-                            foodId: food.id,
-                            mealType: slideOver.mealType,
-                          })
-                        }
-                        disabled={favPending}
-                        aria-label={`Unfavorite ${food.name}`}
-                        aria-pressed={true}
-                        className="shrink-0 text-primary"
-                      >
-                        {favPending ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <Star className="fill-current" />
-                        )}
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <ul className={LIST_CLASS}>{favorites.map(renderStoredFoodRow)}</ul>
             </div>
           </>
         )}
@@ -990,77 +931,50 @@ export default function Meals() {
           {customFoods.length === 0 ? (
             <p className="text-xs text-muted-foreground">No saved foods yet.</p>
           ) : (
-            <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
-              {customFoods.map((food) => {
-                const d = food.servings[defaultServingIdx(food.servings)];
-                return (
-                  <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2">
-                    <button
+            <ul className={LIST_CLASS}>
+              {customFoods.map((food) => (
+                <FoodRow
+                  key={food.id}
+                  food={food}
+                  showBrand={false}
+                  detail={food.servings.length > 1 ? ` · ${food.servings.length} servings` : ""}
+                  onPick={() => pickFoodForLog(storedFoodToChosen(food))}
+                >
+                  <div className="flex items-center gap-1 shrink-0">
+                    <FavoriteButton
+                      shrink={false}
+                      name={food.name}
+                      isFav={favoriteIds.has(food.id)}
+                      pending={isFavPending(food.id)}
+                      onClick={() => handleToggleFavorite(food)}
+                    />
+                    <Button
                       type="button"
-                      onClick={() => pickFoodForLog(customFoodToChosen(food))}
-                      className="flex-1 min-w-0 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
+                      size="icon-sm"
+                      variant="ghost"
+                      onClick={() => openCustomFoodEditor(food)}
+                      aria-label={`Edit ${food.name}`}
                     >
-                      <p className="text-sm font-medium truncate">{food.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {d
-                          ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, "g")} protein`
-                          : ""}
-                        {food.servings.length > 1 ? ` · ${food.servings.length} servings` : ""}
-                      </p>
-                    </button>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => handleToggleFavorite(food)}
-                        disabled={favoritingFoodId === food.id || unfavoritingFoodId === food.id}
-                        aria-label={
-                          favoriteIds.has(food.id)
-                            ? `Unfavorite ${food.name}`
-                            : `Favorite ${food.name}`
-                        }
-                        aria-pressed={favoriteIds.has(food.id)}
-                        className={
-                          favoriteIds.has(food.id)
-                            ? "text-primary"
-                            : "text-muted-foreground hover:text-primary"
-                        }
-                      >
-                        {favoritingFoodId === food.id || unfavoritingFoodId === food.id ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <Star className={favoriteIds.has(food.id) ? "fill-current" : ""} />
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => openCustomFoodEditor(food)}
-                        aria-label={`Edit ${food.name}`}
-                      >
-                        <Pencil />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => handleDeleteCustomFood(food.id)}
-                        disabled={deletingCustomFoodId === food.id}
-                        aria-label={`Delete ${food.name}`}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        {deletingCustomFoodId === food.id ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <Trash2 />
-                        )}
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
+                      <Pencil />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      onClick={() => deleteCustomFoodMutation.mutate(food.id)}
+                      disabled={deletingCustomFoodId === food.id}
+                      aria-label={`Delete ${food.name}`}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      {deletingCustomFoodId === food.id ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Trash2 />
+                      )}
+                    </Button>
+                  </div>
+                </FoodRow>
+              ))}
             </ul>
           )}
 
@@ -1069,60 +983,7 @@ export default function Meals() {
               <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 Recently logged
               </h4>
-              <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
-                {recentFoods.map((food) => {
-                  const d = food.servings[defaultServingIdx(food.servings)];
-                  const isFav = favoriteIds.has(food.id);
-                  const favPending = favoritingFoodId === food.id || unfavoritingFoodId === food.id;
-                  return (
-                    <li
-                      key={food.id}
-                      className="flex items-center justify-between px-3 py-2.5 gap-2"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => pickFoodForLog(storedFoodToChosen(food))}
-                        className="flex-1 min-w-0 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
-                      >
-                        <p className="text-sm font-medium truncate">
-                          {food.name}
-                          {food.brandName ? (
-                            <span className="text-muted-foreground font-normal">
-                              {" "}
-                              · {food.brandName}
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {d
-                            ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, "g")} protein`
-                            : ""}
-                        </p>
-                      </button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => handleToggleFavorite(food)}
-                        disabled={favPending}
-                        aria-label={isFav ? `Unfavorite ${food.name}` : `Favorite ${food.name}`}
-                        aria-pressed={isFav}
-                        className={
-                          isFav
-                            ? "shrink-0 text-primary"
-                            : "shrink-0 text-muted-foreground hover:text-primary"
-                        }
-                      >
-                        {favPending ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <Star className={isFav ? "fill-current" : ""} />
-                        )}
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <ul className={LIST_CLASS}>{recentFoods.map(renderStoredFoodRow)}</ul>
             </div>
           )}
         </div>
@@ -1134,12 +995,6 @@ export default function Meals() {
     if (!chosenFood) return null;
     const serving = chosenFood.servings[chosenServingIdx];
     const q = Number(quantity) || 0;
-    const preview = {
-      calories: (serving?.calories ?? 0) * q,
-      protein: (serving?.protein ?? 0) * q,
-      carbs: (serving?.carbs ?? 0) * q,
-      fat: (serving?.fat ?? 0) * q,
-    };
     return (
       <form onSubmit={handleLogSubmit} className="space-y-4">
         <div>
@@ -1150,11 +1005,7 @@ export default function Meals() {
             ) : null}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {chosenFood.source === "custom"
-              ? "My Food"
-              : chosenFood.source === "barcode"
-                ? "Barcode"
-                : "FatSecret"}
+            {{ custom: "My Food", barcode: "Barcode" }[chosenFood.source] ?? "FatSecret"}
           </p>
         </div>
 
@@ -1193,30 +1044,20 @@ export default function Meals() {
         </div>
 
         <div className="grid grid-cols-4 gap-2 bg-muted rounded-lg p-3">
-          <div className="text-center">
-            <p className="text-base font-bold">{fmt(preview.calories)}</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">kcal</p>
-          </div>
-          <div className="text-center">
-            <p className="text-base font-bold text-primary">{fmt(preview.protein, "g")}</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">protein</p>
-          </div>
-          <div className="text-center">
-            <p className="text-base font-bold">{fmt(preview.carbs, "g")}</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">carbs</p>
-          </div>
-          <div className="text-center">
-            <p className="text-base font-bold">{fmt(preview.fat, "g")}</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">fat</p>
-          </div>
+          {MACROS.map(({ key, unit, short }) => (
+            <div key={key} className="text-center">
+              <p className={cn("text-base font-bold", key === "protein" && "text-primary")}>
+                {fmt((serving?.[key] ?? 0) * q, unit)}
+              </p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{short}</p>
+            </div>
+          ))}
         </div>
 
         {submitError && <p className="text-xs text-destructive">{submitError}</p>}
 
         <Button type="submit" disabled={submitting} className="w-full h-9">
-          {submitting
-            ? "Adding..."
-            : `Add to ${slideOver.mealType.charAt(0).toUpperCase() + slideOver.mealType.slice(1)}`}
+          {submitting ? "Adding..." : `Add to ${mealLabel}`}
         </Button>
 
         <button
@@ -1235,6 +1076,30 @@ export default function Meals() {
 
   function renderCustomFoodPanel() {
     const f = customFoodForm;
+    const nutrientField = (s, idx, [key, label], required = false) => (
+      <div key={key} className="space-y-1.5">
+        <Label htmlFor={`cf-${key}-${idx}`} className="text-[11px]">
+          {label}
+          {required && (
+            <>
+              {" "}
+              <span className="text-destructive">*</span>
+            </>
+          )}
+        </Label>
+        <Input
+          id={`cf-${key}-${idx}`}
+          type="number"
+          value={s[key]}
+          onChange={(e) => updateCustomServingField(idx, key, e.target.value)}
+          required={required}
+          min="0"
+          step="0.1"
+          inputMode="decimal"
+          className="h-9"
+        />
+      </div>
+    );
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -1367,29 +1232,7 @@ export default function Meals() {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                {[
-                  ["calories", "Calories"],
-                  ["protein", "Protein (g)"],
-                  ["carbs", "Carbs (g)"],
-                  ["fat", "Fat (g)"],
-                ].map(([key, label]) => (
-                  <div key={key} className="space-y-1.5">
-                    <Label htmlFor={`cf-${key}-${idx}`} className="text-[11px]">
-                      {label} <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      id={`cf-${key}-${idx}`}
-                      type="number"
-                      value={s[key]}
-                      onChange={(e) => updateCustomServingField(idx, key, e.target.value)}
-                      required
-                      min="0"
-                      step="0.1"
-                      inputMode="decimal"
-                      className="h-9"
-                    />
-                  </div>
-                ))}
+                {REQUIRED_NUTRIENTS.map((n) => nutrientField(s, idx, n, true))}
               </div>
 
               <button
@@ -1406,29 +1249,7 @@ export default function Meals() {
 
               {customFoodAdvancedOpen[idx] && (
                 <div className="grid grid-cols-2 gap-2">
-                  {[
-                    ["fiber", "Fiber (g)"],
-                    ["sugar", "Sugar (g)"],
-                    ["addedSugars", "Added sugars (g)"],
-                    ["saturatedFat", "Sat. fat (g)"],
-                    ["sodium", "Sodium (mg)"],
-                  ].map(([key, label]) => (
-                    <div key={key} className="space-y-1.5">
-                      <Label htmlFor={`cf-${key}-${idx}`} className="text-[11px]">
-                        {label}
-                      </Label>
-                      <Input
-                        id={`cf-${key}-${idx}`}
-                        type="number"
-                        value={s[key]}
-                        onChange={(e) => updateCustomServingField(idx, key, e.target.value)}
-                        min="0"
-                        step="0.1"
-                        inputMode="decimal"
-                        className="h-9"
-                      />
-                    </div>
-                  ))}
+                  {OPTIONAL_NUTRIENTS.map((n) => nutrientField(s, idx, n))}
                 </div>
               )}
             </div>
@@ -1454,7 +1275,7 @@ export default function Meals() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Meal Presets</h3>
-          <Button type="button" size="sm" onClick={() => openPresetEditor(null)}>
+          <Button type="button" size="sm" onClick={() => openPresetEditor()}>
             + New Preset
           </Button>
         </div>
@@ -1507,7 +1328,7 @@ export default function Meals() {
                         type="button"
                         size="icon-sm"
                         variant="ghost"
-                        onClick={() => handleDeletePreset(preset.id)}
+                        onClick={() => deletePresetMutation.mutate(preset.id)}
                         disabled={deletingPresetId === preset.id}
                         aria-label={`Delete preset ${preset.name}`}
                         className="text-muted-foreground hover:text-destructive"
@@ -1600,7 +1421,7 @@ export default function Meals() {
         )}
 
         {!presetSearchLoading && !presetPickFood && presetSearchResults.length > 0 && (
-          <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+          <ul className={LIST_CLASS}>
             {presetSearchResults.map((food) => {
               const p = food.defaultPreview;
               return (
@@ -1611,9 +1432,7 @@ export default function Meals() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{food.foodName}</p>
                     <p className="text-xs text-muted-foreground">
-                      {p
-                        ? `Per ${p.description} · ${fmt(p.calories)} kcal · ${fmt(p.protein, "g")} protein`
-                        : "FatSecret food"}
+                      {p ? `Per ${servingSummary(p)}` : "FatSecret food"}
                     </p>
                     <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">
                       Save to My Foods first to add to a preset.
@@ -1630,26 +1449,15 @@ export default function Meals() {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               My Foods
             </p>
-            <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
-              {customFoods.map((food) => {
-                const d = food.servings[defaultServingIdx(food.servings)];
-                return (
-                  <li key={food.id} className="flex items-center justify-between px-3 py-2.5 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => pickFoodForPreset(customFoodToChosen(food))}
-                      className="min-w-0 flex-1 text-left hover:bg-accent rounded-sm px-1 py-0.5 transition-colors"
-                    >
-                      <p className="text-sm font-medium truncate">{food.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {d
-                          ? `${d.description} · ${fmt(d.calories)} kcal · ${fmt(d.protein, "g")} protein`
-                          : ""}
-                      </p>
-                    </button>
-                  </li>
-                );
-              })}
+            <ul className={LIST_CLASS}>
+              {customFoods.map((food) => (
+                <FoodRow
+                  key={food.id}
+                  food={food}
+                  showBrand={false}
+                  onPick={() => pickFoodForPreset(storedFoodToChosen(food))}
+                />
+              ))}
             </ul>
           </div>
         )}
@@ -1781,7 +1589,7 @@ export default function Meals() {
 
   const sheetTitle =
     panelMode === "presets" || panelMode === "new-preset"
-      ? slideOver.mealType.charAt(0).toUpperCase() + slideOver.mealType.slice(1)
+      ? mealLabel
       : `Add to ${slideOver.mealType}`;
 
   // ─── Render ─────────────────────────────────────────────────────────────
@@ -1808,7 +1616,7 @@ export default function Meals() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-sm font-bold">Nutrition Goals</h2>
           {!goalsEditing ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => setGoalsEditing(true)}>
+            <Button type="button" variant="outline" size="sm" onClick={startEditingGoals}>
               Edit Goals
             </Button>
           ) : (
@@ -1833,14 +1641,7 @@ export default function Meals() {
         <div className="px-5 py-4">
           {goalsEditing ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {[
-                { key: "calorieMin", label: "Calorie Min", unit: "kcal" },
-                { key: "calorieMax", label: "Calorie Max", unit: "kcal" },
-                { key: "proteinMin", label: "Protein Min", unit: "g" },
-                { key: "proteinMax", label: "Protein Max", unit: "g" },
-                { key: "carbsGoal", label: "Carbs Goal", unit: "g" },
-                { key: "fatGoal", label: "Fat Goal", unit: "g" },
-              ].map(({ key, label, unit }) => (
+              {GOAL_FIELDS.map(({ key, label, unit }) => (
                 <div key={key} className="space-y-1.5">
                   <Label htmlFor={`goal-${key}`}>{label}</Label>
                   <div className="flex items-center gap-1.5">
@@ -1861,18 +1662,11 @@ export default function Meals() {
             </div>
           ) : goals ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
-              {[
-                { label: "Cal Min", value: goals.calorieMin, unit: "kcal" },
-                { label: "Cal Max", value: goals.calorieMax, unit: "kcal" },
-                { label: "Protein Min", value: goals.proteinMin, unit: "g" },
-                { label: "Protein Max", value: goals.proteinMax, unit: "g" },
-                { label: "Carbs", value: goals.carbsGoal, unit: "g" },
-                { label: "Fat", value: goals.fatGoal, unit: "g" },
-              ].map(({ label, value, unit }) => (
-                <div key={label} className="bg-muted rounded-lg p-2">
-                  <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+              {GOAL_FIELDS.map(({ key, short, unit }) => (
+                <div key={key} className="bg-muted rounded-lg p-2">
+                  <p className="text-xs text-muted-foreground mb-0.5">{short}</p>
                   <p className="text-sm font-bold">
-                    {value ?? "—"}
+                    {goals[key] ?? "—"}
                     <span className="text-xs font-normal text-muted-foreground ml-0.5">{unit}</span>
                   </p>
                 </div>
@@ -1921,7 +1715,7 @@ export default function Meals() {
                             ) : null}
                           </p>
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {item.quantity && item.quantity !== 1 ? `${item.quantity}× ` : ""}
+                            {item.quantity !== 1 ? `${item.quantity}× ` : ""}
                             {item.servingDesc ? `${item.servingDesc} · ` : ""}
                             {fmt(item.calories)} kcal · {fmt(item.protein, "g")} protein ·{" "}
                             {fmt(item.carbs, "g")} carbs · {fmt(item.fat, "g")} fat
@@ -1930,7 +1724,11 @@ export default function Meals() {
                         <Button
                           size="icon-sm"
                           variant="ghost"
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() =>
+                            deleteMealMutation.mutate(item.id, {
+                              onSuccess: () => toast.success("Entry removed"),
+                            })
+                          }
                           disabled={deletingId === item.id}
                           aria-label={`Delete ${item.foodName}`}
                           className="shrink-0 text-muted-foreground hover:text-destructive"
@@ -2020,22 +1818,14 @@ export default function Meals() {
                 Daily Totals
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-2xl font-bold">{fmt(totals.calories || 0)}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Calories</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-primary">{fmt(totals.protein || 0, "g")}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Protein</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{fmt(totals.carbs || 0, "g")}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Carbs</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{fmt(totals.fat || 0, "g")}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Fat</p>
-                </div>
+                {MACROS.map(({ key, unit, label }) => (
+                  <div key={key}>
+                    <p className={cn("text-2xl font-bold", key === "protein" && "text-primary")}>
+                      {fmt(totals[key] || 0, unit)}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </Card>
